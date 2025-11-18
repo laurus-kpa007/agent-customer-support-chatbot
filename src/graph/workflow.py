@@ -15,6 +15,7 @@ from langgraph.graph import StateGraph, END
 from src.models.state import SupportState
 from src.nodes import (
     initialize_node,
+    classify_intent_node,
     handle_small_talk_node,
     search_knowledge_node,
     plan_response_node,
@@ -46,6 +47,7 @@ def create_workflow() -> StateGraph:
 
     # 노드 추가
     workflow.add_node("initialize", initialize_node)
+    workflow.add_node("classify_intent", classify_intent_node)
     workflow.add_node("handle_small_talk", handle_small_talk_node)
     workflow.add_node("search_knowledge", search_knowledge_node)
     workflow.add_node("plan_response", plan_response_node)
@@ -59,15 +61,34 @@ def create_workflow() -> StateGraph:
     # 엣지 정의
     workflow.set_entry_point("initialize")
 
-    # initialize 후 조건부 라우팅 (티켓 평가 / 스몰톡 / 새 대화 / 계속)
+    # initialize 후 조건부 라우팅 (티켓 평가 / 의도 분류 / 평가)
     workflow.add_conditional_edges(
         "initialize",
         route_after_initialize,
         {
             "evaluate_ticket": "evaluate_ticket_confirmation",  # 티켓 확인 평가
-            "small_talk": "handle_small_talk",                   # 스몰톡
-            "search": "search_knowledge",                        # 새 대화 - 검색
+            "classify": "classify_intent",                       # 의도 분류 (새 입력)
             "evaluate": "evaluate_status"                        # 기존 대화 - 평가
+        }
+    )
+
+    # classify_intent 후 조건부 라우팅 (스몰톡 / 기술 지원)
+    def route_after_classify(state):
+        intent = state.get("intent", "technical_support")
+        if intent == "small_talk":
+            return "small_talk"
+        else:  # technical_support or continue_conversation
+            if intent == "continue_conversation":
+                return "evaluate"
+            return "search"
+
+    workflow.add_conditional_edges(
+        "classify_intent",
+        route_after_classify,
+        {
+            "small_talk": "handle_small_talk",       # 스몰톡
+            "search": "search_knowledge",             # 기술 지원 - 검색
+            "evaluate": "evaluate_status"             # 대화 계속 - 평가
         }
     )
 

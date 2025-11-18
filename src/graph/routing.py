@@ -15,15 +15,14 @@ def route_after_initialize(state: SupportState) -> str:
     """
     initialize 노드 이후 다음 액션 결정
     - 티켓 확인 중이면 티켓 평가 (evaluate_ticket_confirmation)
-    - 스몰톡이면 스몰톡 처리 (handle_small_talk)
     - 기존 대화 계속이면 평가 (evaluate_status)
-    - 새 대화면 검색 (search_knowledge)
+    - 새 입력이면 의도 분류 (classify_intent)
 
     Args:
         state: 현재 상태
 
     Returns:
-        다음 노드 이름 ("evaluate_ticket", "small_talk", "search", "evaluate")
+        다음 노드 이름 ("evaluate_ticket", "classify", "evaluate")
     """
 
     status = state.get("status")
@@ -32,13 +31,8 @@ def route_after_initialize(state: SupportState) -> str:
     if status == "evaluating_ticket":
         return "evaluate_ticket"
 
-    # 스몰톡 처리
-    if status == "small_talking":
-        # print(f"[RouteAfterInit] 스몰톡 감지 → small_talk")  # 디버그
-        return "small_talk"
-
-    # 대화 평가 vs 새 검색
-    route = "evaluate" if status == "evaluating" else "search"
+    # 대화 평가 vs 의도 분류 (새 입력)
+    route = "evaluate" if status == "evaluating" else "classify"
     # print(f"[RouteAfterInit] status={status} → {route}")  # 디버그
 
     return route

@@ -56,22 +56,6 @@ def initialize_node(state: SupportState) -> Dict[str, Any]:
                 state["current_query"] = current_query
                 break
 
-    # 스몰톡 감지 (인사말만 있는 경우)
-    is_small_talk = False
-    if current_query:
-        lower_query = current_query.lower().strip()
-        small_talk_keywords = ["안녕", "hello", "hi", "헬로", "하이", "반가워", "ㅎㅇ"]
-        # 짧은 인사말이고 다른 내용이 없으면 스몰톡
-        if len(lower_query) < 20 and any(kw in lower_query for kw in small_talk_keywords):
-            is_small_talk = True
-
-    state["is_small_talk"] = is_small_talk
-
-    # 스몰톡이면 바로 처리
-    if is_small_talk:
-        state["status"] = "small_talking"
-        return state
-
     # 티켓 확인 상태인지 확인
     is_confirming_ticket = state.get("status") == "confirming_ticket"
 

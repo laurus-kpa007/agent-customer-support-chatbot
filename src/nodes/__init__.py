@@ -4,6 +4,7 @@
 """
 
 from .initialize import initialize_node
+from .classify_intent import classify_intent_node
 from .handle_small_talk import handle_small_talk_node
 from .search_knowledge import search_knowledge_node
 from .plan_response import plan_response_node
@@ -16,6 +17,7 @@ from .send_notification import send_notification_node
 
 __all__ = [
     "initialize_node",
+    "classify_intent_node",
     "handle_small_talk_node",
     "search_knowledge_node",
     "plan_response_node",
