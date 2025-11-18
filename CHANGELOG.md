@@ -1,6 +1,273 @@
 # Changelog - 고객지원 챗봇 개선 이력
 
-## 2025-01-19 (오늘)
+## 2025-11-19 (최신)
+
+### 🎯 주요 버그 수정 및 개선사항
+
+#### 1. LLM 기반 의도 분류 노드 추가 (Intent Classification)
+**문제**: 스몰톡과 기술 지원 문의를 구분하기 어려움
+**해결**: LLM 기반 의도 분류 노드 추가
+
+**Before (키워드 매칭)**:
+```python
+if any(keyword in lower_msg for keyword in ["안녕", "hello", "hi"]):
+    # 스몰톡으로 처리
+```
+
+**After (LLM 기반)**:
+```python
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """사용자 입력을 다음 중 하나로 분류하세요:
+    1. "small_talk": 인사, 잡담, 감사 인사
+    2. "technical_support": 기술 지원, 문제 해결, 문의 요청
+    """),
+    ("user", f"사용자 입력: {last_user_message}")
+])
+```
+
+**지원 의도**:
+- **small_talk**: 인사, 잡담, 감사 표현
+- **technical_support**: 기술 문제, 문의 요청
+- **continue_conversation**: 기존 대화 계속
+
+**정확도**: 100% (12개 테스트 케이스)
+
+**변경 파일**:
+- **새 노드**: `src/nodes/classify_intent.py` - LLM 기반 의도 분류
+- `src/nodes/initialize.py` - 키워드 매칭 제거
+- `src/graph/workflow.py` - classify_intent 노드 추가
+- `src/graph/routing.py` - route_after_classify 함수 추가
+
+**테스트**:
+- `test_intent_classification.py` - 12개 케이스 100% 정확도
+
+**커밋**: `9084bdb` - Add LLM-based intent classification
+
+---
+
+#### 2. 티켓 확인 후 라우팅 버그 수정 (Ticket Confirmation Routing Fix) 🐛
+**문제**: "ㅇㅇ"로 티켓 확인 후 검색이 실행됨 (티켓이 생성되지 않음)
+**원인**: `initialize_node`에서 `status="evaluating_ticket"`를 처리하지 않음
+
+**Before**:
+```python
+# initialize_node에서 evaluating_ticket 상태를 처리하지 않음
+if is_confirming_ticket:
+    state["status"] = "evaluating_ticket"
+    return state
+# 이후 evaluating_ticket 상태가 일반 플로우로 진행됨
+```
+
+**After**:
+```python
+# initialize_node에서 evaluating_ticket 상태 유지
+if is_confirming_ticket:
+    state["status"] = "evaluating_ticket"
+    return state
+
+if is_evaluating_ticket:
+    # 티켓 확인 응답을 평가 중 - 상태 유지
+    return state
+```
+
+**추가 수정**:
+- **State 모델 업데이트**: `ticket_confirmed`, `intent`, `intent_confidence` 필드 추가
+  - 이전에는 TypedDict에 정의되지 않아 LangGraph가 상태 변경을 무시함
+- **Status 추가**: `small_talking`, `confirming_ticket`, `evaluating_ticket`, `cancelled`
+
+**변경 파일**:
+- `src/nodes/initialize.py` - evaluating_ticket 상태 처리 추가
+- `src/models/state.py` - 누락된 상태 필드 추가
+- `src/graph/routing.py` - route_after_ticket_confirmation 디버그 개선
+
+**테스트**:
+- `test_ticket_flow.py` - 티켓 확인 플로우 검증
+- `test_ticket_evaluation.py` - 티켓 평가 노드 단독 테스트
+
+**커밋**: `4f0c60c` - Fix conversation flow and ticket creation bugs
+
+---
+
+#### 3. 티켓 내용 개선 (Improved Ticket Content) ⭐
+**문제**: 티켓에 마지막 사용자 답변만 표시됨
+**해결**: LLM으로 대화 요약 + 전체 대화 이력 포함
+
+**Before**:
+```python
+response_text = (
+    "📋 **등록될 문의 내용:**\n"
+    f"- 문제: {query}\n"  # 마지막 메시지만
+    f"- 시도한 해결 방법: {attempted_steps}개 단계\n"
+)
+```
+
+**After**:
+```python
+# LLM으로 대화 요약 생성
+summary_prompt = ChatPromptTemplate.from_messages([
+    ("system", """대화 내용을 요약하여 간결한 제목을 생성하세요.
+    JSON: {"title": "...", "main_issue": "..."}"""),
+    ("user", "대화 내용:\n{conversation}")
+])
+
+response_text = (
+    "📋 **등록될 문의 내용:**\n\n"
+    f"**제목**: {title}\n"  # LLM 생성 제목
+    f"**핵심 문제**: {main_issue}\n\n"  # LLM 요약
+    "**대화 내역** (최근 5개 메시지):\n"
+    f"```\n{conversation_text[-5:]}\n```\n\n"
+)
+```
+
+**변경 파일**:
+- `src/nodes/confirm_ticket.py` - LLM 기반 요약 추가
+- `src/nodes/create_ticket.py` - 전체 대화 이력 저장 (이미 구현됨)
+
+---
+
+#### 4. 상태 초기화 기능 추가 (State Reset) ⭐
+**문제**: 문제 해결 또는 티켓 생성 후 이전 상태가 유지됨
+**해결**: 새로운 유틸리티 함수로 상태 초기화
+
+**새 파일**:
+- **`src/utils/state_reset.py`** - reset_conversation_state 함수
+
+**초기화 항목**:
+```python
+state["solution_steps"] = []
+state["current_step"] = 0
+state["retrieved_docs"] = []
+state["relevance_score"] = 0.0
+state["unresolved_reason"] = None
+state["ticket_id"] = None
+state["is_continuing"] = False
+state["attempts"] = 0
+state["intent"] = None
+state["intent_confidence"] = None
+state["ticket_confirmed"] = None
+state["current_query"] = ""
+```
+
+**유지 항목** (대화 연속성):
+- `session_id`
+- `user_id`
+- `messages` (대화 이력)
+- `started_at`
+
+**적용 위치**:
+- `src/nodes/evaluate_status.py` - 문제 해결 시 (lines 70, 138)
+- `src/nodes/create_ticket.py` - 티켓 생성 시 (line 143)
+
+---
+
+### 📊 워크플로우 개선 요약
+
+#### 업데이트된 워크플로우
+```
+사용자 입력 → initialize → [조건부 라우팅]
+                           ├─ evaluate_ticket_confirmation (티켓 확인 평가)
+                           ├─ classify_intent (의도 분류) ← NEW
+                           │   ├─ handle_small_talk (스몰톡)
+                           │   ├─ search_knowledge (새 문의)
+                           │   └─ evaluate_status (대화 계속)
+                           └─ evaluate_status (기존 대화)
+```
+
+**5가지 경로** (이전 4개 → 5개):
+1. **티켓 확인 평가** → LLM으로 yes/no/unclear 판단
+2. **의도 분류** → LLM으로 스몰톡/기술지원 구분 ← NEW
+3. **스몰톡** → 인사 응답 → END
+4. **새 문의** → FAQ 검색 → 해결 단계
+5. **대화 계속** → 사용자 응답 평가 → 다음 단계/해결/티켓
+
+---
+
+### 🔧 State 모델 업데이트
+
+**추가된 상태 필드**:
+```python
+# 상태 추적
+status: Literal[
+    "initialized",        # 초기화됨
+    "searching",          # 검색 중
+    "small_talking",      # 스몰톡 중 ← NEW
+    "planning",           # 답변 계획 중
+    "responding",         # 응답 중
+    "waiting_user",       # 사용자 응답 대기
+    "evaluating",         # 평가 중
+    "resolved",           # 해결됨
+    "escalated",          # 에스컬레이션
+    "confirming_ticket",  # 티켓 확인 중 ← NEW
+    "evaluating_ticket",  # 티켓 응답 평가 중 ← NEW
+    "ticket_created",     # 티켓 생성됨
+    "cancelled"           # 티켓 취소됨 ← NEW
+]
+
+# 에스컬레이션 관련
+ticket_confirmed: Optional[bool]  # 티켓 생성 확인 ← NEW
+
+# 의도 분류 ← NEW
+intent: Optional[Literal["small_talk", "technical_support", "continue_conversation"]]
+intent_confidence: Optional[float]
+
+# 디버그 정보 ← NEW
+debug_info: Optional[Dict]
+```
+
+---
+
+### 🧪 테스트 커버리지
+
+| 테스트 파일 | 목적 | 상태 |
+|------------|------|------|
+| `test_intent_classification.py` | LLM 의도 분류 (12개 케이스) | ✅ 100% |
+| `test_ticket_flow.py` | 티켓 확인 플로우 | ✅ Pass |
+| `test_ticket_evaluation.py` | 티켓 평가 노드 (10개 케이스) | ✅ 100% |
+| `test_all_fixes.py` | 포괄적 시나리오 테스트 | ✅ Pass |
+
+**test_all_fixes.py 시나리오**:
+1. ✅ 티켓 생성 플로우 (3단계 실패 → 확인 → "ㅇㅇ" → 티켓 생성)
+2. ✅ 문제 해결 플로우 (검색 → 단계 → "해결됐어요" → 상태 초기화)
+3. ✅ 상태 초기화 검증 (solution_steps, current_step 등 초기화 확인)
+
+---
+
+### 🐛 버그 수정 요약
+
+| 버그 | 원인 | 해결 | 영향 |
+|------|------|------|------|
+| 티켓 확인 후 검색 실행 | `initialize_node`에서 `evaluating_ticket` 상태 미처리 | 상태 유지 로직 추가 | Critical |
+| 티켓 확인 상태 누락 | State 모델에 `ticket_confirmed` 미정의 | TypedDict에 필드 추가 | Critical |
+| 티켓 내용 부실 | 마지막 메시지만 표시 | LLM 요약 + 전체 이력 포함 | High |
+| 상태 미초기화 | 해결/티켓 후 상태 유지 | reset_conversation_state 유틸리티 추가 | High |
+
+---
+
+### 📝 문서 업데이트
+
+**업데이트 문서**:
+- `customer-support-chatbot-langgraph-design.md` - 새 노드 (5개) 추가, State 모델 업데이트
+- `CHANGELOG.md` - 이 파일
+
+**새 파일**:
+- `src/utils/state_reset.py` - 상태 초기화 유틸리티
+- `test_all_fixes.py` - 포괄적 테스트
+- `test_ticket_flow.py` - 티켓 플로우 테스트
+- `test_ticket_evaluation.py` - 티켓 평가 테스트
+
+---
+
+**작성일**: 2025-11-19
+**총 커밋**: 2개
+- `9084bdb` - Add LLM-based intent classification
+- `4f0c60c` - Fix conversation flow and ticket creation bugs
+**테스트 상태**: ✅ All Pass
+**새 노드**: 5개 (classify_intent, handle_small_talk, confirm_ticket, evaluate_ticket_confirmation, state_reset)
+**새 테스트**: 4개
+
+---
+
+## 2025-01-19 (이전)
 
 ### 🎯 주요 개선사항
 

@@ -76,10 +76,14 @@ graph TB
 
         subgraph Nodes["노드들"]
             InitNode[초기화 노드<br/>initialize]
+            ClassifyNode[의도 분류 노드<br/>classify_intent]
+            SmallTalkNode[스몰톡 처리 노드<br/>handle_small_talk]
             RAGNode[RAG 검색 노드<br/>search_knowledge]
             PlanNode[답변 계획 노드<br/>plan_response]
             RespondNode[응답 노드<br/>respond_step]
             EvalNode[평가 노드<br/>evaluate_status]
+            ConfirmNode[티켓 확인 노드<br/>confirm_ticket]
+            EvalTicketNode[티켓 응답 평가 노드<br/>evaluate_ticket_confirmation]
             TicketNode[티켓 생성 노드<br/>create_ticket]
             NotifyNode[알림 노드<br/>send_notification]
         end
@@ -200,26 +204,38 @@ class SupportState(TypedDict):
 
     # 상태 추적
     status: Literal[
-        "initialized",      # 초기화됨
-        "searching",        # 검색 중
-        "planning",         # 답변 계획 중
-        "responding",       # 응답 중
-        "waiting_user",     # 사용자 응답 대기
-        "evaluating",       # 평가 중
-        "resolved",         # 해결됨
-        "escalated",        # 에스컬레이션
-        "ticket_created"    # 티켓 생성됨
+        "initialized",        # 초기화됨
+        "searching",          # 검색 중
+        "small_talking",      # 스몰톡 중
+        "planning",           # 답변 계획 중
+        "responding",         # 응답 중
+        "waiting_user",       # 사용자 응답 대기
+        "evaluating",         # 평가 중
+        "resolved",           # 해결됨
+        "escalated",          # 에스컬레이션
+        "confirming_ticket",  # 티켓 확인 중
+        "evaluating_ticket",  # 티켓 응답 평가 중
+        "ticket_created",     # 티켓 생성됨
+        "cancelled"           # 티켓 취소됨
     ]
 
     # 에스컬레이션 관련
     attempts: int                            # 시도 횟수
     unresolved_reason: Optional[str]         # 미해결 사유
     ticket_id: Optional[str]                 # 생성된 티켓 ID
+    ticket_confirmed: Optional[bool]         # 티켓 생성 확인 (True: 생성, False: 취소, None: 미정)
+
+    # 의도 분류
+    intent: Optional[Literal["small_talk", "technical_support", "continue_conversation"]]  # 사용자 의도
+    intent_confidence: Optional[float]       # 의도 분류 신뢰도
 
     # 메타데이터
     user_id: str                             # 사용자 ID
     session_id: str                          # 세션 ID
     started_at: str                          # 시작 시간
+
+    # 디버그 정보
+    debug_info: Optional[Dict]               # 디버그 정보
 ```
 
 ### 2. FAQ 문서 구조
@@ -336,30 +352,73 @@ workflow = StateGraph(SupportState)
 
 # 노드 추가
 workflow.add_node("initialize", initialize_node)
+workflow.add_node("classify_intent", classify_intent_node)
+workflow.add_node("handle_small_talk", handle_small_talk_node)
 workflow.add_node("search_knowledge", search_knowledge_node)
 workflow.add_node("plan_response", plan_response_node)
 workflow.add_node("respond_step", respond_step_node)
 workflow.add_node("evaluate_status", evaluate_status_node)
+workflow.add_node("confirm_ticket", confirm_ticket_node)
+workflow.add_node("evaluate_ticket_confirmation", evaluate_ticket_confirmation_node)
 workflow.add_node("create_ticket", create_ticket_node)
 workflow.add_node("send_notification", send_notification_node)
 
 # 엣지 정의
 workflow.set_entry_point("initialize")
-workflow.add_edge("initialize", "search_knowledge")
+
+# initialize 이후 조건부 라우팅
+workflow.add_conditional_edges(
+    "initialize",
+    route_after_initialize,
+    {
+        "evaluate_ticket": "evaluate_ticket_confirmation",  # 티켓 확인 평가
+        "classify": "classify_intent",                      # 의도 분류
+        "evaluate": "evaluate_status"                       # 대화 평가
+    }
+)
+
+# classify_intent 이후 조건부 라우팅
+workflow.add_conditional_edges(
+    "classify_intent",
+    route_after_classify,
+    {
+        "small_talk": "handle_small_talk",      # 스몰톡
+        "search": "search_knowledge",            # 기술 지원 - 검색
+        "evaluate": "evaluate_status"            # 대화 계속 - 평가
+    }
+)
+
+# 스몰톡 후 사용자 대기
+workflow.add_edge("handle_small_talk", END)
+
 workflow.add_edge("search_knowledge", "plan_response")
 workflow.add_edge("plan_response", "respond_step")
 
-# respond_step 후 인터럽트 (사용자 응답 대기)
-workflow.add_edge("respond_step", "evaluate_status")
+# respond_step 후 사용자 응답 대기 (Human-in-the-Loop)
+workflow.add_edge("respond_step", END)
 
-# 조건부 라우팅
+# evaluate_status 이후 조건부 라우팅
 workflow.add_conditional_edges(
     "evaluate_status",
-    route_next_action,  # 라우팅 함수
+    route_after_evaluate,
     {
-        "continue": "respond_step",      # 다음 단계 계속
-        "resolved": END,                 # 해결 완료
-        "escalate": "create_ticket"      # 티켓 생성
+        "continue": "respond_step",         # 다음 단계 계속
+        "resolved": END,                    # 해결 완료
+        "confirm_ticket": "confirm_ticket"  # 티켓 확인
+    }
+)
+
+# 티켓 확인 후 사용자 대기
+workflow.add_edge("confirm_ticket", END)
+
+# 티켓 확인 평가 후 조건부 라우팅
+workflow.add_conditional_edges(
+    "evaluate_ticket_confirmation",
+    route_after_ticket_confirmation,
+    {
+        "create": "create_ticket",     # 티켓 생성
+        "cancelled": END,               # 취소
+        "wait": END                     # 재확인 대기
     }
 )
 
@@ -825,6 +884,308 @@ def send_notification_node(state: SupportState) -> SupportState:
 
     return state
 ```
+
+### 8. Classify Intent Node (의도 분류) ⭐ NEW
+
+```python
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+import json
+
+def classify_intent_node(state: SupportState) -> Dict[str, Any]:
+    """
+    사용자 의도 분류 노드
+    - LLM을 사용하여 정확한 의도 파악
+    - 문맥을 고려한 분류
+    """
+
+    # 대화 계속 여부 먼저 확인 (빠른 경로)
+    has_steps = state.get("solution_steps") and len(state.get("solution_steps", [])) > 0
+    was_waiting = state.get("status") == "waiting_user"
+
+    if has_steps and was_waiting:
+        # 기존 대화 계속
+        state["intent"] = "continue_conversation"
+        state["status"] = "evaluating"
+        return state
+
+    # 새 입력인 경우 LLM으로 분류
+    last_user_message = ""
+    for msg in reversed(state["messages"]):
+        if msg.type == "human":
+            last_user_message = msg.content
+            break
+
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """당신은 고객 문의 의도를 분류하는 전문가입니다.
+
+사용자 입력을 다음 중 하나로 분류하세요:
+
+1. "small_talk": 인사, 잡담, 감사 인사
+   예시: "안녕하세요", "Hello", "감사합니다"
+
+2. "technical_support": 기술 지원, 문제 해결, 문의 요청
+   예시: "로그인이 안돼요", "파일 업로드 오류"
+
+중요: 인사와 문의가 함께 있으면 "technical_support"로 분류하세요.
+
+JSON 형식으로 응답하세요:
+{"intent": "small_talk/technical_support", "reason": "분류 이유", "confidence": 0.0-1.0}"""),
+        ("user", f"사용자 입력: {last_user_message}")
+    ])
+
+    try:
+        response = llm.invoke(prompt.format_messages())
+        content = response.content.strip()
+
+        # JSON 파싱 (코드 블록 제거)
+        if "```" in content:
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:].strip()
+
+        classification = json.loads(content)
+        intent = classification.get("intent", "technical_support")
+        confidence = classification.get("confidence", 0.0)
+
+        state["intent"] = intent
+        state["intent_confidence"] = confidence
+
+        if intent == "small_talk":
+            state["status"] = "small_talking"
+        else:  # technical_support
+            state["status"] = "searching"
+
+    except (json.JSONDecodeError, Exception) as e:
+        # 에러 발생 시 안전하게 기술 지원으로 분류
+        state["intent"] = "technical_support"
+        state["status"] = "searching"
+
+    return state
+```
+
+### 9. Handle Small Talk Node (스몰톡 처리) ⭐ NEW
+
+```python
+def handle_small_talk_node(state: SupportState) -> Dict[str, Any]:
+    """
+    스몰톡 처리 노드
+    - 인사말, 감사 등 간단한 응답 제공
+    """
+
+    last_user_message = ""
+    for msg in reversed(state["messages"]):
+        if msg.type == "human":
+            last_user_message = msg.content.lower()
+            break
+
+    # 간단한 응답 생성
+    if any(word in last_user_message for word in ["안녕", "hello", "hi", "좋은"]):
+        response = "안녕하세요! 무엇을 도와드릴까요? 😊"
+    elif any(word in last_user_message for word in ["감사", "고마워", "thanks", "thank"]):
+        response = "천만에요! 더 도움이 필요하시면 언제든지 말씀해주세요. 😊"
+    else:
+        response = "네, 무엇을 도와드릴까요? 😊"
+
+    state["messages"].append(AIMessage(content=response))
+    state["status"] = "waiting_user"
+
+    return state
+```
+
+### 10. Confirm Ticket Node (티켓 확인) ⭐ NEW
+
+```python
+def confirm_ticket_node(state: SupportState) -> Dict[str, Any]:
+    """
+    티켓 생성 확인 노드
+    - 현재까지의 대화 내용 요약 (LLM 사용)
+    - 티켓 등록 의사 확인
+    """
+
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
+
+    # 대화 내용 포맷팅
+    conversation_history = []
+    for msg in state["messages"]:
+        role = "사용자" if msg.type == "human" else "상담원"
+        conversation_history.append(f"{role}: {msg.content[:100]}..." if len(msg.content) > 100 else f"{role}: {msg.content}")
+
+    conversation_text = "\n".join(conversation_history)
+
+    # 대화 요약 생성 (LLM)
+    summary_prompt = ChatPromptTemplate.from_messages([
+        ("system", """대화 내용을 요약하여 간결한 제목을 생성하세요.
+
+JSON 형식으로 응답:
+{
+  "title": "간결한 제목 (30자 이내, 주요 문제만)",
+  "main_issue": "핵심 문제 설명 (50자 이내)"
+}
+
+JSON만 출력하세요."""),
+        ("user", "대화 내용:\n{conversation}")
+    ])
+
+    try:
+        full_conversation = "\n".join([
+            f"{'사용자' if msg.type == 'human' else '상담원'}: {msg.content}"
+            for msg in state["messages"]
+        ])
+
+        response = llm.invoke(summary_prompt.format_messages(conversation=full_conversation))
+        content = response.content.strip()
+
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:].strip()
+
+        summary = json.loads(content)
+        title = summary.get("title", "고객 문의")
+        main_issue = summary.get("main_issue", state.get("current_query", "문의 내용"))
+    except (json.JSONDecodeError, Exception) as e:
+        title = "고객 문의"
+        main_issue = state.get("current_query", "문의 내용")
+
+    # 확인 메시지 생성
+    attempted_steps = state.get("current_step", 0)
+
+    response_text = "😔 불편을 드려 죄송합니다.\n\n"
+
+    if attempted_steps > 0:
+        response_text += f"지금까지 {attempted_steps}단계를 시도하셨지만 문제가 해결되지 않은 것 같습니다.\n"
+
+    response_text += (
+        "담당 부서의 확인이 필요한 상황입니다.\n\n"
+        "📋 **등록될 문의 내용:**\n\n"
+        f"**제목**: {title}\n"
+        f"**핵심 문제**: {main_issue}\n\n"
+        "**대화 내역** (최근 5개 메시지):\n"
+        f"```\n{conversation_text[-5:]}\n```\n\n"
+        "💬 **이 내용으로 문의를 등록하시겠습니까?**\n\n"
+        "답변해주세요:\n"
+        "- '네' 또는 '등록해주세요' → 문의 등록\n"
+        "- '아니요' 또는 '취소' → 문의 등록 취소"
+    )
+
+    state["messages"].append(AIMessage(content=response_text))
+    state["status"] = "confirming_ticket"
+
+    return state
+```
+
+### 11. Evaluate Ticket Confirmation Node (티켓 응답 평가) ⭐ NEW
+
+```python
+def evaluate_ticket_confirmation_node(state: SupportState) -> Dict[str, Any]:
+    """
+    티켓 확인 평가 노드
+    - LLM을 사용하여 사용자의 긍정/부정 의사를 정확히 판단
+    """
+
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
+
+    last_user_message = ""
+    for msg in reversed(state["messages"]):
+        if msg.type == "human":
+            last_user_message = msg.content
+            break
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """당신은 사용자의 의사를 정확히 파악하는 전문가입니다.
+
+사용자가 문의 티켓 등록을 원하는지 판단하세요.
+
+다음 중 하나로 분류하세요:
+1. "yes": 티켓 등록을 원함 (긍정 표현)
+   예: 네, yes, 응, ㅇㅇ, 좋아, 그래, 등록해줘 등
+2. "no": 티켓 등록을 원하지 않음 (부정 표현)
+   예: 아니, no, 안해, 취소, 싫어, ㄴㄴ 등
+3. "unclear": 의사가 명확하지 않음
+
+JSON 형식으로 응답하세요:
+{"decision": "yes/no/unclear", "reason": "판단 이유"}"""),
+        ("user", f"사용자 응답: {last_user_message}")
+    ])
+
+    try:
+        response = llm.invoke(prompt.format_messages())
+        content = response.content.strip()
+
+        if "```" in content:
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:].strip()
+
+        evaluation = json.loads(content)
+        decision = evaluation.get("decision", "unclear")
+
+        if decision == "yes":
+            state["ticket_confirmed"] = True
+            state["status"] = "escalated"
+        elif decision == "no":
+            state["ticket_confirmed"] = False
+            state["status"] = "cancelled"
+            state["messages"].append(
+                AIMessage(content=(
+                    "알겠습니다. 문의 등록을 취소했습니다.\n\n"
+                    "다른 도움이 필요하시면 언제든 말씀해주세요. 😊"
+                ))
+            )
+        else:  # unclear
+            state["ticket_confirmed"] = None
+            state["messages"].append(
+                AIMessage(content=(
+                    "죄송합니다. 명확하게 이해하지 못했습니다.\n\n"
+                    "문의를 등록하시려면 '네' 또는 '등록해주세요'라고 답변해주세요.\n"
+                    "등록을 원하지 않으시면 '아니요' 또는 '취소'라고 답변해주세요."
+                ))
+            )
+
+    except (json.JSONDecodeError, Exception) as e:
+        state["ticket_confirmed"] = None
+        state["messages"].append(
+            AIMessage(content=(
+                "죄송합니다. 명확하게 이해하지 못했습니다.\n\n"
+                "문의를 등록하시려면 '네' 또는 '등록해주세요'라고 답변해주세요.\n"
+                "등록을 원하지 않으시면 '아니요' 또는 '취소'라고 답변해주세요."
+            ))
+        )
+
+    return state
+```
+
+### 12. State Reset Utility (상태 초기화) ⭐ NEW
+
+```python
+def reset_conversation_state(state: SupportState) -> Dict[str, Any]:
+    """
+    대화 상태 초기화
+    - 새로운 대화를 시작할 수 있도록 상태를 리셋
+    - session_id, user_id, messages는 유지 (대화 연속성)
+    - 문제 해결 관련 상태는 모두 초기화
+    """
+
+    state["solution_steps"] = []
+    state["current_step"] = 0
+    state["retrieved_docs"] = []
+    state["relevance_score"] = 0.0
+    state["unresolved_reason"] = None
+    state["ticket_id"] = None
+    state["is_continuing"] = False
+    state["attempts"] = 0
+    state["intent"] = None
+    state["intent_confidence"] = None
+    state["ticket_confirmed"] = None
+    state["current_query"] = ""
+
+    return state
+```
+
+**참고**: 이 함수는 `evaluate_status_node`와 `create_ticket_node`에서 문제 해결 또는 티켓 생성 완료 후 호출됩니다.
 
 ---
 
