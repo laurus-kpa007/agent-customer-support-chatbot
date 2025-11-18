@@ -59,6 +59,6 @@ def confirm_ticket_node(state: SupportState) -> Dict[str, Any]:
 
     # 응답 메시지 추가
     state["messages"].append(AIMessage(content=response_text))
-    state["status"] = "confirming_ticket"
+    state["status"] = "evaluating_ticket"
 
     return state
