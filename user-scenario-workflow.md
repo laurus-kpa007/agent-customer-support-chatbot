@@ -3,8 +3,10 @@
 ## 📋 목차
 1. [기본 시나리오](#기본-시나리오)
 2. [상세 워크플로우](#상세-워크플로우)
-3. [시나리오별 분기 처리](#시나리오별-분기-처리)
-4. [FAQ 데이터 구조](#faq-데이터-구조)
+3. [LangGraph 노드 구조](#langgraph-노드-구조)
+4. [시퀀스 다이어그램](#시퀀스-다이어그램)
+5. [시나리오별 분기 처리](#시나리오별-분기-처리)
+6. [FAQ 데이터 구조](#faq-데이터-구조)
 
 ---
 
@@ -201,6 +203,365 @@ graph TD
     style UserWait fill:#F44336,color:#fff
     style Resolved fill:#4CAF50,color:#fff
     style End fill:#607D8B,color:#fff
+```
+
+---
+
+## LangGraph 노드 구조
+
+### LangGraph StateGraph 아키텍처
+
+```mermaid
+graph LR
+    subgraph LangGraph["LangGraph StateGraph"]
+        subgraph Nodes["7개 핵심 노드"]
+            N1[1. Initialize<br/>초기화]
+            N2[2. Search<br/>RAG 검색]
+            N3[3. Plan<br/>답변 계획]
+            N4[4. Respond<br/>단계 응답]
+            N5[5. Evaluate<br/>상태 평가]
+            N6[6. Create Ticket<br/>티켓 생성]
+            N7[7. Notify<br/>알림 발송]
+        end
+
+        subgraph State["State 관리"]
+            S1[SupportState<br/>- messages<br/>- retrieved_docs<br/>- solution_steps<br/>- status]
+            S2[Checkpointer<br/>SQLite]
+        end
+
+        subgraph Services["서비스"]
+            SV1[Ollama<br/>Gemma2 27b]
+            SV2[Ollama<br/>BGE-M3-Korean]
+            SV3[Chroma<br/>벡터 DB]
+        end
+    end
+
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 -->|continue| N4
+    N5 -->|resolved| END1([종료])
+    N5 -->|escalate| N6
+    N6 --> N7
+    N7 --> END2([종료])
+
+    Nodes <--> State
+    Nodes --> Services
+
+    style N1 fill:#E3F2FD,stroke:#1976D2
+    style N2 fill:#FFF3E0,stroke:#F57C00
+    style N3 fill:#F3E5F5,stroke:#7B1FA2
+    style N4 fill:#E8F5E9,stroke:#388E3C
+    style N5 fill:#FFF9C4,stroke:#F9A825
+    style N6 fill:#FCE4EC,stroke:#C2185B
+    style N7 fill:#E1F5FE,stroke:#0288D1
+    style S1 fill:#FFEBEE,stroke:#D32F2F
+    style S2 fill:#F1F8E9,stroke:#689F38
+```
+
+### 노드별 책임과 데이터 흐름
+
+```mermaid
+graph TD
+    subgraph Input["입력 데이터"]
+        I1[User Query<br/>사용자 질의]
+    end
+
+    subgraph Node1["1. Initialize"]
+        I1 --> A1[Session ID 생성]
+        A1 --> A2[State 초기화]
+        A2 --> A3[시도 횟수 카운트]
+    end
+
+    subgraph Node2["2. Search Knowledge"]
+        A3 --> B1[Query 임베딩<br/>BGE-M3-Korean]
+        B1 --> B2[Chroma 벡터 검색]
+        B2 --> B3[상위 3개 FAQ 추출]
+        B3 --> B4[관련성 점수 계산]
+    end
+
+    subgraph Node3["3. Plan Response"]
+        B4 --> C1[FAQ 증상/원인 분석]
+        C1 --> C2[LLM으로 단계 계획<br/>Gemma2 27b]
+        C2 --> C3[solution_steps 생성<br/>방법1, 방법2, 방법3]
+    end
+
+    subgraph Node4["4. Respond Step"]
+        C3 --> D1[current_step 확인]
+        D1 --> D2[단계별 메시지 포맷팅<br/>증상/원인/임시조치]
+        D2 --> D3[사용자에게 응답]
+        D3 --> D4[Human-in-the-Loop<br/>사용자 응답 대기]
+    end
+
+    subgraph Node5["5. Evaluate Status"]
+        D4 --> E1[사용자 응답 분석<br/>LLM]
+        E1 --> E2{평가 결과}
+        E2 -->|해결됨| E3[status = resolved]
+        E2 -->|계속| E4[current_step++]
+        E2 -->|에스컬레이션| E5[status = escalated]
+    end
+
+    subgraph Node6["6. Create Ticket"]
+        E5 --> F1[대화 히스토리 요약<br/>LLM]
+        F1 --> F2[티켓 데이터 구성]
+        F2 --> F3[JSON 파일 저장]
+        F3 --> F4[ticket_id 생성]
+    end
+
+    subgraph Node7["7. Send Notification"]
+        F4 --> G1[이메일 템플릿 생성]
+        G1 --> G2[알림 발송<br/>Console Log]
+    end
+
+    E3 --> Output1([종료])
+    E4 --> D1
+    G2 --> Output2([종료])
+
+    style Node1 fill:#E3F2FD
+    style Node2 fill:#FFF3E0
+    style Node3 fill:#F3E5F5
+    style Node4 fill:#E8F5E9
+    style Node5 fill:#FFF9C4
+    style Node6 fill:#FCE4EC
+    style Node7 fill:#E1F5FE
+```
+
+---
+
+## 시퀀스 다이어그램
+
+### 1. 전체 시스템 상호작용 (문제 해결 성공)
+
+```mermaid
+sequenceDiagram
+    actor User as 👤 사용자
+    participant UI as Streamlit UI
+    participant WF as LangGraph Workflow
+    participant Init as Initialize Node
+    participant Search as Search Node
+    participant Plan as Plan Node
+    participant Respond as Respond Node
+    participant Eval as Evaluate Node
+    participant Ollama as Ollama LLM
+    participant Chroma as Chroma DB
+
+    User->>UI: 메신저 알림이 안떠요
+    UI->>WF: run(query)
+
+    rect rgb(200, 230, 255)
+        Note over WF,Init: 초기화 단계
+        WF->>Init: initialize()
+        Init->>Init: 세션 ID 생성
+        Init-->>UI: 상태: 초기화 중...
+    end
+
+    rect rgb(255, 240, 200)
+        Note over WF,Chroma: 지식 검색 단계
+        WF->>Search: search_knowledge()
+        Search-->>UI: 상태: 지식 검색 중...
+        Search->>Chroma: 벡터 검색 (임베딩)
+        Chroma-->>Search: FAQ 문서 3개
+        Search->>Search: 관련성 점수 계산
+    end
+
+    rect rgb(240, 230, 255)
+        Note over WF,Ollama: 답변 계획 단계
+        WF->>Plan: plan_response()
+        Plan-->>UI: 상태: 답변 계획 중...
+        Plan->>Ollama: 단계별 해결방법 생성
+        Ollama-->>Plan: solution_steps (3단계)
+    end
+
+    rect rgb(230, 255, 230)
+        Note over WF,UI: 단계 1 응답
+        WF->>Respond: respond_step()
+        Respond-->>UI: 상태: 단계 1 준비 중...
+        Respond->>Respond: 메시지 포맷팅
+        Respond-->>UI: [단계 1/3] 알림 설정 확인...
+        UI-->>User: 단계 1 안내
+    end
+
+    User->>UI: 체크되어 있는데요
+
+    rect rgb(255, 250, 200)
+        Note over WF,Ollama: 상태 평가
+        UI->>WF: run(response)
+        WF->>Eval: evaluate_status()
+        Eval-->>UI: 상태: 응답 분석 중...
+        Eval->>Ollama: 해결 여부 판단
+        Ollama-->>Eval: decision: continue
+        Eval->>Eval: current_step++
+    end
+
+    rect rgb(230, 255, 230)
+        Note over WF,UI: 단계 2 응답
+        WF->>Respond: respond_step()
+        Respond-->>UI: 상태: 단계 2 준비 중...
+        Respond-->>UI: [단계 2/3] 윈도우 설정 확인...
+        UI-->>User: 단계 2 안내
+    end
+
+    User->>UI: 네, 그것도 켜져 있어요
+
+    rect rgb(230, 255, 230)
+        Note over WF,UI: 단계 3 응답
+        UI->>WF: run(response)
+        WF->>Eval: evaluate_status()
+        Eval->>Ollama: 해결 여부 판단
+        Ollama-->>Eval: decision: continue
+        WF->>Respond: respond_step()
+        Respond-->>UI: [단계 3/3] 메신저 재시작...
+        UI-->>User: 단계 3 안내
+    end
+
+    User->>UI: 됐어요! 감사합니다
+
+    rect rgb(200, 255, 200)
+        Note over WF,UI: 완료
+        UI->>WF: run(response)
+        WF->>Eval: evaluate_status()
+        Eval-->>UI: 상태: 응답 분석 중...
+        Eval->>Ollama: 해결 여부 판단
+        Ollama-->>Eval: decision: resolved
+        Eval->>Eval: status = resolved
+        Eval-->>UI: 상태: 완료
+        UI-->>User: ✅ 문제가 해결되어 기쁩니다!
+    end
+```
+
+### 2. 티켓 생성 시나리오
+
+```mermaid
+sequenceDiagram
+    actor User as 👤 사용자
+    participant UI as Streamlit UI
+    participant WF as LangGraph Workflow
+    participant Eval as Evaluate Node
+    participant Ticket as Create Ticket Node
+    participant Notify as Notify Node
+    participant Ollama as Ollama LLM
+    participant FS as File System
+
+    Note over User,FS: 모든 단계 시도 후 미해결 상황
+
+    User->>UI: 재시작해도 안되는데요
+    UI->>WF: run(response)
+
+    rect rgb(255, 250, 200)
+        Note over WF,Ollama: 상태 평가
+        WF->>Eval: evaluate_status()
+        Eval-->>UI: 상태: 상황 분석 중...
+        Eval->>Eval: current_step >= max_steps
+        Eval->>Eval: status = escalated
+    end
+
+    rect rgb(255, 230, 240)
+        Note over WF,UI: 티켓 생성 제안
+        Eval-->>UI: 담당 부서 확인 필요...
+        UI-->>User: 문의를 등록하시겠습니까?
+    end
+
+    User->>UI: 네 등록해주세요
+
+    rect rgb(255, 230, 240)
+        Note over WF,FS: 티켓 생성
+        UI->>WF: run(response)
+        WF->>Ticket: create_ticket()
+        Ticket-->>UI: 상태: 티켓 초안 작성 중...
+        Ticket->>Ollama: 대화 요약
+        Ollama-->>Ticket: 요약 결과
+        Ticket->>Ticket: 티켓 데이터 구성
+        Ticket-->>UI: 상태: 게시판 등록 중...
+        Ticket->>FS: ticket_xxx.json 저장
+        FS-->>Ticket: 저장 완료
+        Ticket->>Ticket: ticket_id 생성
+    end
+
+    rect rgb(200, 230, 255)
+        Note over WF,UI: 알림 발송
+        WF->>Notify: send_notification()
+        Notify-->>UI: 상태: 알림 발송 중...
+        Notify->>Notify: 이메일 템플릿 생성
+        Notify->>Notify: Console Log 출력
+        Notify-->>UI: 상태: 완료
+    end
+
+    UI-->>User: ✅ 문의 등록 완료<br/>문의번호: TK-xxx<br/>이메일로 알려드립니다
+```
+
+### 3. Human-in-the-Loop 상세 흐름
+
+```mermaid
+sequenceDiagram
+    actor User as 👤 사용자
+    participant UI as Streamlit UI
+    participant Graph as StateGraph
+    participant Checkpoint as SQLite Checkpointer
+    participant Node as Current Node
+
+    Note over User,Node: Interrupt 메커니즘
+
+    User->>UI: 초기 질의
+    UI->>Graph: run(query, config)
+    Graph->>Checkpoint: 상태 로드
+    Checkpoint-->>Graph: previous_state
+
+    loop 각 단계마다
+        Graph->>Node: execute()
+        Node->>Node: 작업 수행
+        Node-->>Graph: result
+        Graph->>Checkpoint: save_state()
+
+        alt Interrupt Point (respond_step 후)
+            Graph-->>UI: INTERRUPT
+            UI-->>User: 응답 표시 + 입력 대기
+            Note over UI,User: 사용자 응답 대기<br/>(비동기)
+            User->>UI: 응답 입력
+            UI->>Graph: run(response, config)
+            Graph->>Checkpoint: 상태 로드
+            Checkpoint-->>Graph: saved_state
+            Graph->>Graph: resume from checkpoint
+        end
+    end
+
+    Graph-->>UI: Final Result
+    UI-->>User: 완료 메시지
+```
+
+### 4. 벡터 검색 및 LLM 호출 흐름
+
+```mermaid
+sequenceDiagram
+    participant Search as Search Node
+    participant Embedder as Ollama BGE-M3
+    participant Chroma as Chroma VectorDB
+    participant Plan as Plan Node
+    participant LLM as Ollama Gemma2
+
+    rect rgb(255, 240, 200)
+        Note over Search,Chroma: 벡터 검색
+        Search->>Search: query = "메신저 알림 안떠요"
+        Search->>Embedder: embed_query(query)
+        Embedder->>Embedder: 한글 임베딩 생성
+        Embedder-->>Search: embedding_vector [768dim]
+        Search->>Chroma: similarity_search(embedding)
+        Chroma->>Chroma: 코사인 유사도 계산
+        Chroma-->>Search: Top 3 FAQ 문서
+        Search->>Search: 관련성 점수 저장
+    end
+
+    rect rgb(240, 230, 255)
+        Note over Plan,LLM: 답변 계획
+        Search-->>Plan: retrieved_docs
+        Plan->>Plan: FAQ 데이터 포맷팅
+        Plan->>LLM: prompt + FAQ context
+        Note over LLM: "다음 FAQ를 바탕으로<br/>단계별 해결방법을<br/>JSON으로 생성하세요"
+        LLM->>LLM: 추론 및 생성
+        LLM-->>Plan: solution_steps JSON
+        Plan->>Plan: JSON 파싱 및 검증
+        Plan-->>Search: structured_steps
+    end
 ```
 
 ---
