@@ -61,7 +61,7 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
 ### 7개 핵심 노드
 
 1. **Initialize**: 세션 초기화, 상태 설정
-2. **Search Knowledge**: FAISS/Chroma 벡터 검색
+2. **Search Knowledge**: Chroma 벡터 검색 (BGE-M3-Korean 임베딩)
 3. **Plan Response**: LLM 기반 단계별 해결방법 생성
 4. **Respond Step**: 현재 단계 안내
 5. **Evaluate Status**: 해결 여부 판단 및 라우팅
@@ -203,7 +203,7 @@ customer-support-chatbot-poc/
 │
 ├── data/                           # 데이터
 │   ├── sample_faq.json            # 샘플 FAQ
-│   ├── vectorstore/               # FAISS 벡터 스토어
+│   ├── vectorstore/               # Chroma 벡터 스토어
 │   └── tickets/                   # 생성된 티켓들
 │
 ├── src/                           # 소스 코드
