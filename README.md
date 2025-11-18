@@ -72,11 +72,13 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
 
 ### PoC 버전 (현재)
 - **프레임워크**: LangGraph (LangChain)
-- **LLM**: OpenAI GPT-4o-mini
-- **벡터 DB**: FAISS (경량)
-- **임베딩**: OpenAI text-embedding-3-small
+- **LLM**: 🚀 **Ollama Gemma2 27b** (로컬 LLM)
+- **벡터 DB**: Chroma
+- **임베딩**: 🇰🇷 **Ollama BGE-M3-Korean** (한글 최적화)
 - **상태 관리**: SQLite Checkpointer
-- **인터페이스**: CLI
+- **인터페이스**: 🌐 **Streamlit WebUI** (실시간 채팅)
+- **FAQ 데이터**: 1000개 구조화된 데이터 (증상/원인/임시조치)
+- **진행 상태**: 실시간 Progress Bar
 
 ### 프로덕션 고려 사항
 - **프레임워크**: Microsoft Agent Framework
@@ -90,11 +92,18 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
 
 ### 설계 문서
 - [LangGraph PoC 상세 설계](./customer-support-chatbot-langgraph-design.md)
-  - 전체 아키텍처 설계
-  - 데이터 모델 정의
+  - 전체 아키텍처 설계 (Ollama + Streamlit)
+  - 데이터 모델 정의 (증상/원인/임시조치 구조)
   - 노드별 상세 구현 가이드
   - Human-in-the-Loop 구현 방법
+  - 실시간 진행 상태 표시
   - 구현 로드맵 (7-9일)
+
+- [사용자 시나리오 및 워크플로우](./user-scenario-workflow.md) ⭐ **NEW**
+  - 상세 사용 시나리오 (문제 해결 / 티켓 생성)
+  - 전체 프로세스 다이어그램
+  - FAQ 데이터 구조 예시 (1000개 게시글 기준)
+  - WebUI 상태 표시 구현 예시
 
 ### 참고 문서
 - [Microsoft Agent Framework 상세 가이드](./microsoft-agent-framework-detailed.md)
@@ -102,18 +111,35 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
   - AutoGen과의 비교
   - 프로덕션 전환 가이드
 
-## 🚀 빠른 시작 (예정)
+## 🚀 빠른 시작
 
 ### 필수 요구사항
 - Python 3.8+
-- OpenAI API Key
+- **Ollama 설치** (https://ollama.ai)
+- 8GB+ RAM (Gemma2 27b 실행용)
 
-### 설치
+### 1. Ollama 설치 및 모델 다운로드
+
+```bash
+# Ollama 설치 (macOS/Linux)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows: https://ollama.ai/download 에서 다운로드
+
+# 필요한 모델 다운로드 (~15GB)
+ollama pull gemma2:27b          # LLM 모델 (~13GB)
+ollama pull bge-m3-korean       # 한글 임베딩 모델 (~1.2GB)
+
+# 모델 확인
+ollama list
+```
+
+### 2. 프로젝트 설치
 
 ```bash
 # 레포지토리 클론
-git clone https://github.com/laurus-kpa007/-customer-support-chatbot.git
-cd -customer-support-chatbot
+git clone https://github.com/laurus-kpa007/agent-customer-support-chatbot.git
+cd agent-customer-support-chatbot
 
 # 가상환경 생성
 python -m venv venv
@@ -124,18 +150,43 @@ pip install -r requirements.txt
 
 # 환경 변수 설정
 cp .env.example .env
-# .env 파일에 OPENAI_API_KEY 입력
+# .env 파일 수정 (Ollama 설정 확인)
 ```
 
-### 실행
+### 3. 데이터 준비 및 벡터 스토어 구축
 
 ```bash
-# 샘플 데이터로 벡터 스토어 구축
+# FAQ 1000개 샘플 데이터 생성
+python scripts/prepare_faq_data.py
+
+# Chroma 벡터 스토어 구축
 python scripts/build_vectorstore.py
 
-# CLI 챗봇 실행
-python main.py
+# Ollama 연결 테스트
+python scripts/test_ollama.py
 ```
+
+### 4. Streamlit WebUI 실행
+
+```bash
+# WebUI 실행
+streamlit run src/ui/app.py
+
+# 브라우저에서 자동으로 열립니다
+# http://localhost:8501
+```
+
+### 5. 사용 방법
+
+1. WebUI가 열리면 채팅 입력창에 질문 입력
+2. 실시간 진행 상태 확인 (검색 중, 답변 준비 중 등)
+3. 단계별 해결 방법 확인 및 응답
+4. 미해결 시 티켓 자동 생성
+
+**예시 질문**:
+- "메신저에서 알림이 안와요"
+- "로그인이 안돼요"
+- "파일 업로드가 안됩니다"
 
 ## 📂 프로젝트 구조 (예정)
 

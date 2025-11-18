@@ -31,19 +31,23 @@ FAQ와 Q&A 게시판 데이터를 기반으로 사용자 질의에 단계별(Ste
 ## PoC 범위 및 제약사항
 
 ### PoC에 포함되는 기능
-- ✅ 간단한 벡터 스토어 기반 RAG (FAISS/Chroma)
+- ✅ 로컬 LLM 기반 RAG (Ollama Gemma3 27b)
+- ✅ 한글 최적화 임베딩 (Ollama BGE-M3-Korean)
+- ✅ Chroma 벡터 스토어 (1000개 FAQ 지원)
 - ✅ LangGraph StateGraph를 이용한 워크플로우
+- ✅ FAQ 구조화된 데이터 (증상/원인/임시조치)
 - ✅ 단계별 답변 제공 (최대 3단계)
 - ✅ Human-in-the-Loop 인터럽트
+- ✅ 실시간 진행 상태 표시
+- ✅ **Streamlit WebUI** (채팅 인터페이스)
 - ✅ 간단한 티켓 생성 (JSON 파일 저장)
 - ✅ 이메일 알림 (콘솔 출력 시뮬레이션)
 
 ### PoC에서 제외되는 기능
-- ❌ 실제 웹 크롤링 (샘플 데이터 사용)
+- ❌ 실제 웹 크롤링 (1000개 샘플 FAQ 데이터 사용)
 - ❌ 복잡한 GraphRAG (간단한 벡터 검색으로 대체)
 - ❌ 프로덕션 데이터베이스 (SQLite 사용)
 - ❌ 실제 게시판 API 연동 (Mock 구현)
-- ❌ 웹 UI (CLI 인터페이스)
 - ❌ 인증/보안 기능
 
 ### 성공 기준
@@ -62,7 +66,8 @@ FAQ와 Q&A 게시판 데이터를 기반으로 사용자 질의에 단계별(Ste
 ```mermaid
 graph TB
     subgraph UserInterface["사용자 인터페이스"]
-        CLI[CLI Chat Interface<br/>Python REPL]
+        WebUI[Streamlit WebUI<br/>채팅 인터페이스]
+        StatusDisplay[실시간 상태 표시<br/>Progress Bar]
     end
 
     subgraph LangGraphLayer["LangGraph 워크플로우 레이어"]
@@ -79,17 +84,18 @@ graph TB
         end
 
         Memory[Checkpointer<br/>SqliteSaver]
+        StatusUpdater[상태 업데이트<br/>각 노드마다]
     end
 
     subgraph DataLayer["데이터 레이어"]
-        VectorDB[(Vector Store<br/>FAISS/Chroma)]
+        VectorDB[(Vector Store<br/>Chroma)]
         TicketDB[(티켓 DB<br/>SQLite)]
-        SampleData[샘플 FAQ<br/>JSON/CSV]
+        SampleData[1000개 FAQ<br/>JSON 구조화]
     end
 
-    subgraph LLMLayer["LLM 레이어"]
-        LLM[OpenAI GPT-4<br/>또는 GPT-3.5]
-        Embeddings[OpenAI Embeddings<br/>text-embedding-3-small]
+    subgraph LLMLayer["로컬 LLM 레이어"]
+        LLM[Ollama<br/>Gemma3 27b]
+        Embeddings[Ollama<br/>BGE-M3-Korean]
     end
 
     subgraph ExternalMock["외부 시스템 Mock"]
@@ -97,9 +103,11 @@ graph TB
         QABoardMock[Q&A 게시판<br/>JSON File]
     end
 
-    CLI --> StateGraph
+    WebUI --> StateGraph
     StateGraph --> Nodes
     StateGraph --> Memory
+    Nodes --> StatusUpdater
+    StatusUpdater --> StatusDisplay
 
     Nodes --> LLM
     Nodes --> Embeddings
@@ -216,21 +224,80 @@ class SupportState(TypedDict):
 ### 2. FAQ 문서 구조
 
 ```python
+class FAQSolution(TypedDict):
+    """개별 해결 방법 구조"""
+    method: int                              # 방법 번호 (1, 2, 3, ...)
+    title: str                               # 방법 제목
+    steps: List[str]                         # 실행 단계들
+    expected_result: str                     # 기대되는 결과
+
+class FAQContent(TypedDict):
+    """FAQ 본문 구조 (증상/원인/임시조치)"""
+    symptom: str                             # 증상 설명
+    cause: str                               # 원인 설명
+    solutions: List[FAQSolution]             # 임시조치 방법들 (방법1, 방법2, ...)
+
 class FAQDocument(TypedDict):
-    """FAQ 문서 구조"""
-    id: str                                  # 문서 ID
+    """FAQ 문서 구조 (1000개 게시글 기준)"""
+    id: str                                  # 문서 ID (예: FAQ-001)
     category: str                            # 카테고리 (메신저, 로그인, 알림 등)
-    question: str                            # 질문
-    answer: str                              # 답변
-    steps: Optional[List[Dict]]              # 단계별 해결 방법
-    # 예: [
-    #   {"step": 1, "action": "환경설정 > 알림 확인", "description": "..."},
-    #   {"step": 2, "action": "윈도우 설정 확인", "description": "..."}
-    # ]
+    title: str                               # 게시글 제목
+    content: FAQContent                      # 본문 (증상/원인/임시조치)
     tags: List[str]                          # 태그
     created_at: str                          # 생성일
     updated_at: str                          # 수정일
+    view_count: int                          # 조회수
+    helpful_count: int                       # 도움됨 수
     source: Literal["faq", "qa_board"]       # 출처
+
+# 예시 데이터
+example_faq = {
+    "id": "FAQ-001",
+    "category": "메신저",
+    "title": "신착 메시지 알림이 표시되지 않음",
+    "content": {
+        "symptom": "메신저에서 새로운 메시지를 받아도 알림창이 뜨지 않습니다.",
+        "cause": "알림 설정이 비활성화되어 있거나, 운영체제의 알림 권한이 거부된 경우 발생할 수 있습니다.",
+        "solutions": [
+            {
+                "method": 1,
+                "title": "메신저 알림 설정 확인",
+                "steps": [
+                    "환경설정 메뉴를 엽니다",
+                    "알림 탭을 선택합니다",
+                    "'알림창' 옵션에 체크되어 있는지 확인합니다"
+                ],
+                "expected_result": "알림창에 체크가 되어있어야 합니다"
+            },
+            {
+                "method": 2,
+                "title": "윈도우 알림 설정 확인",
+                "steps": [
+                    "윈도우 시작 메뉴를 엽니다",
+                    "설정 > 시스템 > 알림 및 작업을 선택합니다",
+                    "'앱 및 다른 보낸 사람의 알림 받기'를 켜짐으로 설정합니다"
+                ],
+                "expected_result": "모든 알림 설정이 켜짐 상태여야 합니다"
+            },
+            {
+                "method": 3,
+                "title": "메신저 재시작",
+                "steps": [
+                    "작업 표시줄에서 메신저 아이콘을 우클릭합니다",
+                    "'종료'를 선택합니다",
+                    "메신저를 다시 실행합니다"
+                ],
+                "expected_result": "재시작 후 알림이 정상적으로 표시됩니다"
+            }
+        ]
+    },
+    "tags": ["알림", "메신저", "설정"],
+    "created_at": "2023-08-15",
+    "updated_at": "2023-11-10",
+    "view_count": 1247,
+    "helpful_count": 982,
+    "source": "faq"
+}
 ```
 
 ### 3. 티켓 구조
@@ -854,12 +921,17 @@ langchain==0.1.0
 langchain-core==0.1.0
 langchain-community==0.0.13
 langgraph==0.0.20
-langchain-openai==0.0.2
+
+# Ollama (로컬 LLM)
+langchain-ollama==0.1.0
+ollama==0.1.6
 
 # 벡터 스토어
-faiss-cpu==1.7.4
-# 또는
-# chromadb==0.4.22
+chromadb==0.4.22
+
+# Streamlit WebUI
+streamlit==1.28.0
+streamlit-chat==0.1.1
 
 # 데이터 처리
 pandas==2.1.4
@@ -874,18 +946,40 @@ jupyter==1.0.0
 pytest==7.4.3
 ```
 
+### Ollama 모델 설치
+
+```bash
+# Ollama 설치 (https://ollama.ai)
+# macOS/Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows
+# https://ollama.ai/download 에서 다운로드
+
+# 필요한 모델 다운로드
+ollama pull gemma2:27b          # LLM 모델
+ollama pull bge-m3-korean       # 한글 임베딩 모델 (1.2GB)
+
+# 모델 확인
+ollama list
+```
+
 ### 환경 변수 (.env)
 
 ```bash
-# OpenAI API
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# Ollama 설정
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_LLM_MODEL=gemma2:27b
+OLLAMA_EMBEDDING_MODEL=bge-m3-korean
 
 # 데이터 경로
 DATA_DIR=./data
 VECTORSTORE_PATH=./data/vectorstore
 TICKETS_PATH=./data/tickets
+
+# Streamlit 설정
+STREAMLIT_SERVER_PORT=8501
+STREAMLIT_SERVER_ADDRESS=localhost
 
 # 로깅
 LOG_LEVEL=INFO
@@ -897,17 +991,20 @@ LOG_LEVEL=INFO
 
 ```
 customer-support-chatbot-poc/
-├── README.md
-├── requirements.txt
-├── .env
+├── README.md                       # 프로젝트 개요
+├── requirements.txt                # Python 의존성
+├── .env                            # 환경 변수
 ├── .gitignore
 │
+├── docs/                           # 문서
+│   ├── customer-support-chatbot-langgraph-design.md
+│   ├── microsoft-agent-framework-detailed.md
+│   └── user-scenario-workflow.md  # 사용자 시나리오
+│
 ├── data/                           # 데이터 디렉토리
-│   ├── sample_faq.json            # 샘플 FAQ 데이터
-│   ├── sample_qa.json             # 샘플 Q&A 데이터
-│   ├── vectorstore/               # FAISS 벡터 스토어
-│   │   ├── index.faiss
-│   │   └── index.pkl
+│   ├── faq_1000.json              # 1000개 FAQ 데이터
+│   ├── vectorstore/               # Chroma 벡터 스토어
+│   │   └── chroma.sqlite3
 │   └── tickets/                   # 생성된 티켓들
 │       └── ticket_*.json
 │
@@ -917,7 +1014,7 @@ customer-support-chatbot-poc/
 │   ├── models/                    # 데이터 모델
 │   │   ├── __init__.py
 │   │   ├── state.py              # State 정의
-│   │   ├── faq.py                # FAQ 모델
+│   │   ├── faq.py                # FAQ 모델 (증상/원인/임시조치)
 │   │   └── ticket.py             # Ticket 모델
 │   │
 │   ├── nodes/                     # LangGraph 노드
@@ -937,9 +1034,19 @@ customer-support-chatbot-poc/
 │   │
 │   ├── services/                  # 서비스 레이어
 │   │   ├── __init__.py
-│   │   ├── vectorstore.py        # 벡터 스토어 관리
-│   │   ├── llm_service.py        # LLM 호출
-│   │   └── ticket_service.py     # 티켓 관리
+│   │   ├── vectorstore.py        # Chroma 벡터 스토어 관리
+│   │   ├── ollama_service.py     # Ollama LLM 호출
+│   │   ├── ticket_service.py     # 티켓 관리
+│   │   └── status_service.py     # 진행 상태 관리
+│   │
+│   ├── ui/                        # Streamlit WebUI
+│   │   ├── __init__.py
+│   │   ├── app.py                # 메인 Streamlit 앱
+│   │   ├── components/           # UI 컴포넌트
+│   │   │   ├── chat_interface.py # 채팅 인터페이스
+│   │   │   ├── status_display.py # 상태 표시
+│   │   │   └── ticket_view.py    # 티켓 뷰
+│   │   └── styles.py             # CSS 스타일
 │   │
 │   └── utils/                     # 유틸리티
 │       ├── __init__.py
@@ -947,9 +1054,9 @@ customer-support-chatbot-poc/
 │       └── config.py             # 설정 관리
 │
 ├── scripts/                       # 스크립트
-│   ├── prepare_data.py           # 데이터 준비
-│   ├── build_vectorstore.py      # 벡터 스토어 구축
-│   └── mock_answer_watcher.py    # 답변 알림 시뮬레이터
+│   ├── prepare_faq_data.py       # FAQ 1000개 데이터 준비
+│   ├── build_vectorstore.py      # Chroma 벡터 스토어 구축
+│   └── test_ollama.py            # Ollama 연결 테스트
 │
 ├── notebooks/                     # Jupyter 노트북
 │   ├── 01_data_exploration.ipynb
