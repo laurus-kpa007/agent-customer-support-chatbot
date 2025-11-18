@@ -3,7 +3,12 @@
 조건부 엣지를 위한 라우팅 로직을 정의합니다.
 """
 
-from ..models.state import SupportState
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.models.state import SupportState
 
 
 def route_after_evaluate(state: SupportState) -> str:

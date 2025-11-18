@@ -3,6 +3,11 @@
 대화 내용을 요약하여 Q&A 게시판에 티켓을 생성합니다.
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import os
 import json
 from datetime import datetime
@@ -14,7 +19,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage
 from dotenv import load_dotenv
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 # 환경 변수 로드
 load_dotenv()

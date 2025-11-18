@@ -3,11 +3,16 @@
 대화 초기화 및 세션 정보 설정을 담당합니다.
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from datetime import datetime
 import uuid
 from typing import Dict, Any
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 
 def initialize_node(state: SupportState) -> Dict[str, Any]:

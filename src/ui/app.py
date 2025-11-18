@@ -3,11 +3,18 @@
 고객지원 챗봇 웹 인터페이스
 """
 
+import sys
+from pathlib import Path
+
+# 프로젝트 루트를 Python 경로에 추가
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 import uuid
 
-from ..graph.workflow import create_workflow
+from src.graph.workflow import create_workflow
 
 
 # 페이지 설정

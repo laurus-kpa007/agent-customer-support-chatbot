@@ -3,10 +3,15 @@
 티켓 생성 알림을 발송합니다 (PoC: 콘솔 출력).
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from datetime import datetime
 from typing import Dict, Any
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 
 def send_notification_node(state: SupportState) -> Dict[str, Any]:

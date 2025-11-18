@@ -3,6 +3,11 @@
 사용자 응답을 분석하여 문제 해결 여부를 판단합니다.
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import os
 import json
 from typing import Dict, Any
@@ -12,7 +17,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage
 from dotenv import load_dotenv
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 # 환경 변수 로드
 load_dotenv()

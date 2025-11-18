@@ -3,11 +3,18 @@
 고객지원 챗봇의 전체 워크플로우를 정의합니다.
 """
 
+import sys
+from pathlib import Path
+
+# 프로젝트 루트를 Python 경로에 추가
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from ..models.state import SupportState
-from ..nodes import (
+from src.models.state import SupportState
+from src.nodes import (
     initialize_node,
     search_knowledge_node,
     plan_response_node,
@@ -16,7 +23,7 @@ from ..nodes import (
     create_ticket_node,
     send_notification_node,
 )
-from .routing import route_after_evaluate
+from src.graph.routing import route_after_evaluate
 
 
 def create_workflow() -> StateGraph:
