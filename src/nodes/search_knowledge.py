@@ -3,6 +3,11 @@
 Chroma 벡터 스토어에서 관련 FAQ를 검색합니다.
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import os
 from typing import Dict, Any
 
@@ -10,7 +15,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings
 from dotenv import load_dotenv
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 # 환경 변수 로드
 load_dotenv()

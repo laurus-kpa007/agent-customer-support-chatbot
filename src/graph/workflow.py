@@ -3,11 +3,17 @@
 고객지원 챗봇의 전체 워크플로우를 정의합니다.
 """
 
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+import sys
+from pathlib import Path
 
-from ..models.state import SupportState
-from ..nodes import (
+# 프로젝트 루트를 Python 경로에 추가
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from langgraph.graph import StateGraph, END
+
+from src.models.state import SupportState
+from src.nodes import (
     initialize_node,
     search_knowledge_node,
     plan_response_node,
@@ -16,7 +22,7 @@ from ..nodes import (
     create_ticket_node,
     send_notification_node,
 )
-from .routing import route_after_evaluate
+from src.graph.routing import route_after_respond, route_after_evaluate
 
 
 def create_workflow() -> StateGraph:
@@ -45,8 +51,15 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("search_knowledge", "plan_response")
     workflow.add_edge("plan_response", "respond_step")
 
-    # respond_step 후 인터럽트 없이 바로 evaluate로 (Human-in-the-Loop은 UI 레벨에서 처리)
-    workflow.add_edge("respond_step", "evaluate_status")
+    # respond_step 후 조건부 라우팅 (Human-in-the-Loop)
+    workflow.add_conditional_edges(
+        "respond_step",
+        route_after_respond,
+        {
+            "wait_user": END,                # 첫 응답 - 사용자 답변 대기
+            "evaluate": "evaluate_status"    # 사용자가 답변함 - 평가
+        }
+    )
 
     # 조건부 라우팅: evaluate_status 이후
     workflow.add_conditional_edges(
@@ -62,14 +75,8 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("create_ticket", "send_notification")
     workflow.add_edge("send_notification", END)
 
-    # 체크포인터 생성 (대화 상태 저장)
-    memory = SqliteSaver.from_conn_string("checkpoints.db")
-
-    # 컴파일
-    app = workflow.compile(
-        checkpointer=memory,
-        # interrupt_before=["evaluate_status"]  # UI에서 Human-in-the-Loop 처리
-    )
+    # 컴파일 (체크포인터 없이 - PoC용)
+    app = workflow.compile()
 
     return app
 

@@ -1,6 +1,6 @@
 """LangGraph Nodes
 
-7X u� x�| Xi��.
+고객지원 챗봇의 각 노드를 정의하는 모듈입니다.
 """
 
 from .initialize import initialize_node

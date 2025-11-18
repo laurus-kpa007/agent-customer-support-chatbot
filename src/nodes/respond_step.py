@@ -3,10 +3,15 @@
 현재 단계의 해결 방법을 사용자에게 안내합니다.
 """
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from typing import Dict, Any
 from langchain_core.messages import AIMessage
 
-from ..models.state import SupportState
+from src.models.state import SupportState
 
 
 def respond_step_node(state: SupportState) -> Dict[str, Any]:

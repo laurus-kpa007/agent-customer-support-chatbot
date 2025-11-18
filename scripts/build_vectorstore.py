@@ -71,7 +71,7 @@ def create_documents_from_faq(faq_data: list) -> list:
                 "id": faq["id"],
                 "category": faq["category"],
                 "title": faq["title"],
-                "tags": faq["tags"],
+                "tags": ", ".join(faq["tags"]) if isinstance(faq["tags"], list) else faq["tags"],
                 "source": faq["source"],
                 "helpful_count": faq["helpful_count"],
                 "created_at": faq["created_at"]

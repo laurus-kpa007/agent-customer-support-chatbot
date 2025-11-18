@@ -1,6 +1,6 @@
-"""Graph - LangGraph �l\�
+"""Graph - LangGraph 워크플로우
 
-�l\�@ |� \�D Xi��.
+LangGraph 워크플로우 구성 모듈입니다.
 """
 
 from .workflow import create_workflow, get_workflow_graph
