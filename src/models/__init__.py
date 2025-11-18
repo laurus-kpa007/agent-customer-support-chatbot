@@ -1,6 +1,6 @@
-"""pt0 �x
+"""데이터 모델
 
-FAQ, State, Ticket pt0 �xD Xi��.
+FAQ, State, Ticket 데이터 모델을 정의하는 모듈입니다.
 """
 
 from .faq import FAQDocument, FAQContent, FAQSolution
