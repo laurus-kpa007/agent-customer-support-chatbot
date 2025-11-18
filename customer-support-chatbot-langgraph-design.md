@@ -9,8 +9,9 @@
 6. [주요 노드 상세 설계](#주요-노드-상세-설계)
 7. [Human-in-the-Loop 구현](#human-in-the-loop-구현)
 8. [기술 스택](#기술-스택)
-9. [디렉토리 구조](#디렉토리-구조)
-10. [구현 단계](#구현-단계)
+9. [벡터 스토어 구축 및 청킹 전략](#벡터-스토어-구축-및-청킹-전략) ⭐ NEW
+10. [디렉토리 구조](#디렉토리-구조)
+11. [구현 단계](#구현-단계)
 
 ---
 
@@ -982,6 +983,374 @@ STREAMLIT_SERVER_ADDRESS=localhost
 
 # 로깅
 LOG_LEVEL=INFO
+```
+
+---
+
+## 벡터 스토어 구축 및 청킹 전략
+
+### 청킹 전략의 중요성
+
+일반 RAG에서 **청킹(Chunking) 전략**은 검색 품질을 결정하는 가장 중요한 요소입니다. 특히 FAQ처럼 구조화된 데이터에서 잘못된 청킹은 해결 방법이 중간에 잘려 불완전한 정보를 제공하는 문제를 야기합니다.
+
+### 문제 상황: 일반 청킹의 한계
+
+```python
+# ❌ 나쁜 예: 고정 길이 청킹 (500자 단위)
+from langchain.text_splitter import CharacterTextSplitter
+
+splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+chunks = splitter.split_text(faq_content)
+
+# 결과:
+# Chunk 1: "제목 + 증상 + 원인 + 방법1의 일부만"
+# Chunk 2: "방법1 나머지 + 방법2 일부"  ← 불완전한 정보!
+# Chunk 3: "방법2 나머지 + 방법3"
+```
+
+**문제점**:
+- 해결 방법(Method)이 여러 청크에 분산
+- 벡터 검색 시 불완전한 단계만 반환 가능
+- 사용자에게 중간이 잘린 지침 제공 → 문제 해결 실패
+
+### 권장 청킹 전략
+
+#### 전략 1: 문서 전체를 하나의 청크로 (권장 ⭐)
+
+FAQ 문서는 이미 의미적으로 완결된 단위이며, 크기도 적당합니다.
+
+```python
+# ✅ 좋은 예: 문서 단위 청킹
+from langchain_core.documents import Document
+
+def build_vectorstore_whole_document():
+    """각 FAQ 문서 전체를 하나의 청크로 처리"""
+    documents = []
+
+    for faq in faq_data:
+        # 전체 FAQ 내용을 하나의 문자열로
+        content = f"""제목: {faq['title']}
+카테고리: {faq['category']}
+
+증상:
+{faq['content']['symptom']}
+
+원인:
+{faq['content']['cause']}
+
+해결 방법:
+"""
+        # 각 해결 방법을 완전하게 포함
+        for solution in faq['content']['solutions']:
+            content += f"\n[방법 {solution['method']}] {solution['title']}\n"
+            for i, step in enumerate(solution['steps'], 1):
+                content += f"  {i}. {step}\n"
+            content += f"  ▶ 기대 결과: {solution['expected_result']}\n"
+
+        # 메타데이터와 함께 Document 생성
+        doc = Document(
+            page_content=content,
+            metadata={
+                "id": faq["id"],
+                "category": faq["category"],
+                "title": faq["title"],
+                "tags": faq["tags"],
+                "source": faq["source"],
+                "helpful_count": faq["helpful_count"]  # 품질 지표
+            }
+        )
+        documents.append(doc)
+
+    return documents
+
+# 벡터 스토어 구축
+embeddings = OllamaEmbeddings(model="bge-m3-korean")
+vectorstore = Chroma.from_documents(
+    documents=build_vectorstore_whole_document(),
+    embedding=embeddings,
+    persist_directory="data/vectorstore"
+)
+```
+
+**장점**:
+- ✅ 해결 방법이 절대 잘리지 않음
+- ✅ FAQ 문서 크기가 적당 (평균 1000-2000자)
+- ✅ 구현이 단순하고 안정적
+- ✅ 전체 맥락(증상/원인/해결책) 유지
+
+**단점**:
+- 문서가 매우 긴 경우 임베딩 품질 저하 가능 (하지만 FAQ는 대부분 짧음)
+
+#### 전략 2: Parent-Child Document 전략 (고급)
+
+문서가 긴 경우, 검색은 작은 단위로 하되 전체 문서를 반환합니다.
+
+```python
+from langchain.retrievers import ParentDocumentRetriever
+from langchain.storage import InMemoryStore
+
+def build_parent_child_vectorstore():
+    """Parent: 전체 FAQ, Child: 각 해결 방법"""
+
+    parent_docs = []
+    child_docs = []
+
+    for faq in faq_data:
+        # Parent: 전체 FAQ 문서
+        parent_content = f"{faq['title']}\n{faq['content']['symptom']}\n{faq['content']['cause']}"
+        parent_doc = Document(
+            page_content=parent_content,
+            metadata={"id": faq["id"], "type": "parent"}
+        )
+        parent_docs.append(parent_doc)
+
+        # Child: 각 해결 방법 (검색 대상)
+        for solution in faq['content']['solutions']:
+            child_content = f"[방법 {solution['method']}] {solution['title']}\n"
+            child_content += "\n".join([f"{i}. {step}" for i, step in enumerate(solution['steps'], 1)])
+            child_content += f"\n기대 결과: {solution['expected_result']}"
+
+            child_doc = Document(
+                page_content=child_content,
+                metadata={
+                    "parent_id": faq["id"],
+                    "method": solution["method"],
+                    "type": "child"
+                }
+            )
+            child_docs.append(child_doc)
+
+    # ParentDocumentRetriever 사용
+    embeddings = OllamaEmbeddings(model="bge-m3-korean")
+    vectorstore = Chroma.from_documents(child_docs, embeddings)
+    docstore = InMemoryStore()
+
+    retriever = ParentDocumentRetriever(
+        vectorstore=vectorstore,
+        docstore=docstore,
+        child_splitter=None,  # 이미 수동으로 분할
+        parent_splitter=None
+    )
+
+    return retriever
+```
+
+**장점**:
+- ✅ 정밀한 검색 (각 해결 방법 단위)
+- ✅ 완전한 문서 반환 (Parent)
+- ✅ 긴 문서에도 효과적
+
+**단점**:
+- 구현 복잡도 증가
+- 추가 저장소(docstore) 필요
+
+#### 전략 3: 의미 기반 청킹 (Semantic Chunking)
+
+구조화된 필드(증상, 원인, 각 방법)를 기준으로 청킹합니다.
+
+```python
+def build_semantic_chunks():
+    """의미 단위로 청킹 - 각 해결 방법을 독립적인 청크로"""
+    documents = []
+
+    for faq in faq_data:
+        # 각 해결 방법을 별도 청크로 (하지만 맥락 정보 포함)
+        base_context = f"[FAQ-{faq['id']}] {faq['title']}\n증상: {faq['content']['symptom']}\n원인: {faq['content']['cause']}\n\n"
+
+        for solution in faq['content']['solutions']:
+            # 맥락(증상/원인) + 완전한 해결 방법
+            content = base_context
+            content += f"해결 방법 {solution['method']}: {solution['title']}\n"
+            content += "\n".join([f"{i}. {step}" for i, step in enumerate(solution['steps'], 1)])
+            content += f"\n기대 결과: {solution['expected_result']}"
+
+            doc = Document(
+                page_content=content,
+                metadata={
+                    "faq_id": faq["id"],
+                    "category": faq["category"],
+                    "method_number": solution["method"],
+                    "chunk_type": "solution"
+                }
+            )
+            documents.append(doc)
+
+    return documents
+```
+
+**장점**:
+- ✅ 각 해결 방법이 완전하게 유지
+- ✅ 맥락 정보(증상/원인) 포함
+- ✅ 검색 정밀도 향상
+
+**단점**:
+- 중복 정보 (각 청크에 증상/원인 반복)
+- 벡터 DB 크기 증가
+
+### PoC 권장 구현
+
+**Phase 1 (PoC)**: 전략 1 - 문서 전체 청킹 사용
+- FAQ 문서 크기가 적당 (평균 1000-2000자)
+- 구현 단순, 안정적
+- 해결 방법 잘림 위험 제로
+
+**Phase 2 (프로덕션)**: 전략 2 또는 3 고려
+- 실제 데이터 분석 후 결정
+- A/B 테스트로 검색 품질 비교
+
+### 메타데이터 필터링 활용
+
+청킹과 함께 메타데이터 필터링을 활용하면 검색 정확도를 더욱 높일 수 있습니다.
+
+```python
+# 카테고리 기반 필터링
+results = vectorstore.similarity_search(
+    query="메신저 알림이 안떠요",
+    k=3,
+    filter={"category": "메신저"}  # 카테고리 필터
+)
+
+# 품질 기반 필터링 (helpful_count 높은 것 우선)
+results = vectorstore.similarity_search(
+    query="로그인 오류",
+    k=5,
+    filter={"helpful_count": {"$gte": 100}}  # 도움됨 100개 이상
+)
+```
+
+### 벡터 스토어 구축 스크립트 예시
+
+```python
+# scripts/build_vectorstore.py
+
+import json
+from langchain_ollama import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+
+def load_faq_data(file_path: str):
+    """FAQ JSON 파일 로드"""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def create_documents_from_faq(faq_data: list) -> list[Document]:
+    """FAQ 데이터를 Document 객체로 변환 (전체 문서 청킹)"""
+    documents = []
+
+    for faq in faq_data:
+        # 전체 FAQ 내용 구성
+        content = f"""제목: {faq['title']}
+카테고리: {faq['category']}
+
+증상:
+{faq['content']['symptom']}
+
+원인:
+{faq['content']['cause']}
+
+해결 방법:
+"""
+        for solution in faq['content']['solutions']:
+            content += f"\n[방법 {solution['method']}] {solution['title']}\n"
+            for i, step in enumerate(solution['steps'], 1):
+                content += f"  {i}. {step}\n"
+            content += f"  ▶ 기대 결과: {solution['expected_result']}\n"
+
+        doc = Document(
+            page_content=content,
+            metadata={
+                "id": faq["id"],
+                "category": faq["category"],
+                "title": faq["title"],
+                "tags": faq["tags"],
+                "source": faq["source"],
+                "helpful_count": faq["helpful_count"],
+                "created_at": faq["created_at"]
+            }
+        )
+        documents.append(doc)
+
+    return documents
+
+def main():
+    print("📚 FAQ 데이터 로드 중...")
+    faq_data = load_faq_data("data/faq_1000.json")
+    print(f"✅ {len(faq_data)}개 FAQ 로드 완료")
+
+    print("\n📄 Document 객체 생성 중...")
+    documents = create_documents_from_faq(faq_data)
+    print(f"✅ {len(documents)}개 Document 생성 완료")
+
+    print("\n🔄 Ollama 임베딩 모델 로드 중...")
+    embeddings = OllamaEmbeddings(model="bge-m3-korean")
+    print("✅ BGE-M3-Korean 임베딩 모델 로드 완료")
+
+    print("\n🗄️  Chroma 벡터 스토어 구축 중...")
+    vectorstore = Chroma.from_documents(
+        documents=documents,
+        embedding=embeddings,
+        persist_directory="data/vectorstore",
+        collection_name="faq_collection"
+    )
+    print("✅ 벡터 스토어 구축 완료")
+
+    # 테스트 검색
+    print("\n🔍 테스트 검색 수행 중...")
+    test_query = "메신저에서 알림이 안떠요"
+    results = vectorstore.similarity_search(test_query, k=3)
+
+    print(f"\n쿼리: {test_query}")
+    print(f"검색 결과: {len(results)}개")
+    for i, doc in enumerate(results, 1):
+        print(f"\n[{i}] {doc.metadata['title']}")
+        print(f"    카테고리: {doc.metadata['category']}")
+        print(f"    내용 미리보기: {doc.page_content[:100]}...")
+
+    print("\n✅ 벡터 스토어 구축 완료!")
+
+if __name__ == "__main__":
+    main()
+```
+
+### 청킹 품질 검증
+
+```python
+# scripts/validate_chunking.py
+
+def validate_chunking_strategy():
+    """청킹 전략 검증: 해결 방법이 완전한지 확인"""
+    vectorstore = Chroma(
+        persist_directory="data/vectorstore",
+        embedding_function=OllamaEmbeddings(model="bge-m3-korean")
+    )
+
+    test_cases = [
+        "메신저 알림 설정",
+        "로그인 비밀번호 오류",
+        "파일 업로드 실패"
+    ]
+
+    for query in test_cases:
+        print(f"\n쿼리: {query}")
+        results = vectorstore.similarity_search(query, k=1)
+
+        doc = results[0]
+        content = doc.page_content
+
+        # 해결 방법이 완전한지 확인
+        method_count = content.count("[방법")
+        complete_methods = content.count("기대 결과:")
+
+        print(f"  발견된 방법 수: {method_count}")
+        print(f"  완전한 방법 수: {complete_methods}")
+
+        if method_count != complete_methods:
+            print(f"  ⚠️  경고: 불완전한 해결 방법 발견!")
+        else:
+            print(f"  ✅ 모든 해결 방법이 완전함")
+
+if __name__ == "__main__":
+    validate_chunking_strategy()
 ```
 
 ---
