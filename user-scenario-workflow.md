@@ -78,12 +78,32 @@
 
 ---
 
-### 시나리오 2: 미해결 → 티켓 생성 케이스
+### 시나리오 2: 스몰톡 케이스 ⭐ NEW
+
+```
+👤 사용자: 안녕하세요!
+
+🤖 Agent:
+   [상태: 의도 분류 중...]
+   [상태: 스몰톡 처리 중...]
+
+   안녕하세요! 😊
+   고객지원 챗봇입니다.
+
+   무엇을 도와드릴까요?
+
+   [대화 종료]
+```
+
+---
+
+### 시나리오 3: 미해결 → 티켓 확인 → 생성 케이스 ⭐ UPDATED
 
 ```
 👤 사용자: 메신저에서 신착 메시지 알림이 안떠요
 
 🤖 Agent:
+   [상태: 의도 분류 중...]
    [상태: 지식 검색 중...]
    관련 FAQ를 찾았습니다. 단계별로 확인해드리겠습니다.
 
@@ -108,46 +128,51 @@
 
 🤖 Agent:
    [상태: 상황 분석 중...]
-   [상태: 티켓 초안 작성 중...]
+   [상태: 대화 요약 중...] ⭐ NEW
 
    불편을 드려 죄송합니다. 😔
    제시된 모든 방법을 시도하셨는데도 문제가 해결되지 않으셨네요.
    담당 부서의 확인이 필요한 상황인 것 같습니다.
 
-   📋 문의 내용 요약
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   제목: 메신저 신착 알림 미작동
-   증상: 메신저에서 신착 메시지 알림이 표시되지 않음
+   📋 **등록될 문의 내용:** ⭐ NEW (LLM 요약)
 
-   시도한 해결 방법:
-   ✓ 방법 1: 메신저 알림 설정 확인 → 정상
-   ✓ 방법 2: 윈도우 알림 설정 확인 → 정상
-   ✓ 방법 3: 메신저 재시작 → 문제 지속
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   **제목**: 메신저 신착 알림 미작동 문제
+   **핵심 문제**: 모든 설정 확인 후에도 메신저 알림이 표시되지 않음
 
-   현재까지의 문의 내용으로 Q&A 게시판에 등록하시겠습니까?
-   (등록하시면 담당자가 확인 후 답변을 드립니다)
+   **대화 내역** (최근 5개 메시지):
+   ```
+   사용자: 메신저에서 신착 메시지 알림이 안떠요
+   상담원: [단계 1/3] 환경설정 확인...
+   사용자: 체크되어 있는데요
+   상담원: [단계 2/3] 윈도우 시스템 설정 확인...
+   사용자: 재시작해도 안되는데요
+   ```
 
-👤 사용자: 네 등록해주세요
+   💬 **이 내용으로 문의를 등록하시겠습니까?** ⭐ NEW
+
+   답변해주세요:
+   - '네' 또는 '등록해주세요' → 문의 등록
+   - '아니요' 또는 '취소' → 문의 등록 취소
+
+👤 사용자: ㅇㅇ
 
 🤖 Agent:
+   [상태: 티켓 확인 평가 중...] ⭐ NEW
    [상태: 티켓 생성 중...]
    [상태: 게시판 등록 중...]
-   [상태: 알림 설정 중...]
 
-   ✅ 아래 내용으로 문의를 등록하였습니다.
+   ✅ 문의가 등록되었습니다!
 
    📌 문의 번호: TK-20231118-a3f2
-   📌 제목: 메신저 신착 알림 미작동
-   📌 카테고리: 메신저
+   📌 제목: 메신저 신착 알림 미작동 문제
    📌 상태: 접수 완료
 
-   답변이 등록되면 이메일로 알려드리겠습니다.
-   등록하신 이메일: user@example.com
+   담당자가 확인 후 답변을 드리겠습니다.
+   답변이 등록되면 알림을 보내드리겠습니다. 📬
 
-   평균 응답 시간: 1-2 영업일
+   감사합니다! 😊
 
-   감사합니다! 🙏
+   [상태: 초기화 완료] ⭐ NEW - 새로운 대화 시작 가능
 ```
 
 ---
@@ -215,14 +240,19 @@ graph TD
 ```mermaid
 graph LR
     subgraph LangGraph["LangGraph StateGraph"]
-        subgraph Nodes["7개 핵심 노드"]
+        subgraph Nodes["12개 핵심 노드"]
             N1[1. Initialize<br/>초기화]
-            N2[2. Search<br/>RAG 검색]
-            N3[3. Plan<br/>답변 계획]
-            N4[4. Respond<br/>단계 응답]
-            N5[5. Evaluate<br/>상태 평가]
-            N6[6. Create Ticket<br/>티켓 생성]
-            N7[7. Notify<br/>알림 발송]
+            N2[2. Classify Intent<br/>의도 분류 ⭐NEW]
+            N3[3. Handle Small Talk<br/>스몰톡 처리 ⭐NEW]
+            N4[4. Search<br/>RAG 검색]
+            N5[5. Plan<br/>답변 계획]
+            N6[6. Respond<br/>단계 응답]
+            N7[7. Evaluate<br/>상태 평가]
+            N8[8. Confirm Ticket<br/>티켓 확인 ⭐NEW]
+            N9[9. Eval Ticket Conf<br/>티켓 응답 평가 ⭐NEW]
+            N10[10. Create Ticket<br/>티켓 생성]
+            N11[11. Notify<br/>알림 발송]
+            N12[12. State Reset<br/>상태 초기화 ⭐NEW]
         end
 
         subgraph State["State 관리"]
@@ -238,14 +268,23 @@ graph LR
     end
 
     N1 --> N2
-    N2 --> N3
-    N3 --> N4
+    N2 -->|small_talk| N3
+    N2 -->|technical| N4
+    N3 --> END1([종료])
     N4 --> N5
-    N5 -->|continue| N4
-    N5 -->|resolved| END1([종료])
-    N5 -->|escalate| N6
+    N5 --> N6
     N6 --> N7
-    N7 --> END2([종료])
+    N7 -->|continue| N6
+    N7 -->|resolved| N12
+    N7 -->|escalate| N8
+    N8 --> END2([사용자 대기])
+    END2 --> N9
+    N9 -->|yes| N10
+    N9 -->|no/unclear| END3([종료/재확인])
+    N10 --> N11
+    N10 --> N12
+    N11 --> END4([종료])
+    N12 --> END5([새 대화])
 
     Nodes <--> State
     Nodes --> Services
@@ -254,9 +293,14 @@ graph LR
     style N2 fill:#FFF3E0,stroke:#F57C00
     style N3 fill:#F3E5F5,stroke:#7B1FA2
     style N4 fill:#E8F5E9,stroke:#388E3C
-    style N5 fill:#FFF9C4,stroke:#F9A825
-    style N6 fill:#FCE4EC,stroke:#C2185B
-    style N7 fill:#E1F5FE,stroke:#0288D1
+    style N5 fill:#E1F5FE,stroke:#0288D1
+    style N6 fill:#FFF9C4,stroke:#F9A825
+    style N7 fill:#FCE4EC,stroke:#C2185B
+    style N8 fill:#FFEBEE,stroke:#D32F2F
+    style N9 fill:#F1F8E9,stroke:#689F38
+    style N10 fill:#E8EAF6,stroke:#3F51B5
+    style N11 fill:#FCE4EC,stroke:#C2185B
+    style N12 fill:#FFF8E1,stroke:#FBC02D
     style S1 fill:#FFEBEE,stroke:#D32F2F
     style S2 fill:#F1F8E9,stroke:#689F38
 ```
@@ -1104,6 +1148,7 @@ def validate_chunking_completeness(vectorstore):
 
 ---
 
-**문서 버전**: 2.0
-**최종 업데이트**: 2025-11-18
+**문서 버전**: 3.0
+**최종 업데이트**: 2025-11-19
 **작성 목적**: 사용자 경험 설계 및 개발 가이드
+**주요 변경**: 5개 노드 추가 (의도 분류, 스몰톡, 티켓 확인 플로우, 상태 초기화)
