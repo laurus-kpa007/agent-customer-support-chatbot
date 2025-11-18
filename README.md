@@ -149,22 +149,20 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 의존성 설치
 pip install -r requirements.txt
 
-# 환경 변수 설정
-cp .env.example .env
-# .env 파일 수정 (Ollama 설정 확인)
+# 환경 변수 확인 (.env 파일이 이미 포함되어 있습니다)
+# 필요시 Ollama URL 수정: OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ### 3. 데이터 준비 및 벡터 스토어 구축
 
 ```bash
-# FAQ 1000개 샘플 데이터 생성
-python scripts/prepare_faq_data.py
-
-# Chroma 벡터 스토어 구축
+# Chroma 벡터 스토어 구축 (샘플 FAQ 20개 포함)
 python scripts/build_vectorstore.py
 
-# Ollama 연결 테스트
-python scripts/test_ollama.py
+# 청킹 품질 검증
+python scripts/validate_chunking.py
+
+# ✅ 벡터 스토어가 data/vectorstore에 생성됩니다
 ```
 
 ### 4. Streamlit WebUI 실행
