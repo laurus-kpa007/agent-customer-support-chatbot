@@ -687,7 +687,9 @@ sequenceDiagram
 }
 ```
 
-### Graph 설계에 반영된 FAQ 구조
+### LangGraph 노드에서의 FAQ 구조 처리
+
+FAQ 데이터 구조가 LangGraph의 각 노드에서 어떻게 처리되고 활용되는지 설명합니다.
 
 #### 1. 검색 단계 (Search Node)
 
