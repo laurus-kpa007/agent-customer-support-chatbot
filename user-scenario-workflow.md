@@ -7,6 +7,7 @@
 4. [시퀀스 다이어그램](#시퀀스-다이어그램)
 5. [시나리오별 분기 처리](#시나리오별-분기-처리)
 6. [FAQ 데이터 구조](#faq-데이터-구조)
+7. [벡터 임베딩 및 청킹 전략](#벡터-임베딩-및-청킹-전략) ⭐ NEW
 
 ---
 
@@ -779,6 +780,288 @@ progress_bar.progress(100)
 # 실제 답변 표시
 st.markdown(response_text)
 ```
+
+---
+
+## 벡터 임베딩 및 청킹 전략
+
+### 청킹 전략의 중요성
+
+일반 RAG 시스템에서 **청킹(Chunking)은 검색 품질을 결정하는 핵심 요소**입니다. FAQ 데이터처럼 구조화된 문서에서 잘못된 청킹은 해결 방법이 중간에 잘려 사용자에게 불완전한 정보를 제공하게 됩니다.
+
+### 문제 상황: 잘못된 청킹
+
+```
+❌ 일반 고정 길이 청킹 (500자 단위)을 사용하면:
+
+FAQ 원본:
+┌──────────────────────────────────────┐
+│ 제목: 메신저 알림 미작동             │
+│ 증상: 메신저에서 새로운 메시지를...  │
+│ 원인: 알림 설정이 비활성화...        │
+│ 방법1: [단계1] 환경설정 열기         │
+│        [단계2] 알림 탭 선택           │ ← 청크 1 여기서 끊김
+│        [단계3] 알림창 체크 확인       │
+│ 방법2: [단계1] 윈도우 시작            │ ← 청크 2 시작
+│        [단계2] 설정 > 알림            │
+│        [단계3] 켜기                   │
+└──────────────────────────────────────┘
+
+결과: 벡터 검색 시 "방법1의 앞부분만" 반환
+     → 사용자가 불완전한 단계만 보게 됨!
+```
+
+### 권장 청킹 전략: 문서 전체 청킹
+
+**PoC에서 채택한 전략**: 각 FAQ 문서를 통째로 하나의 청크로 처리
+
+```python
+# ✅ 올바른 방법: 문서 전체를 하나의 청크로
+
+def create_faq_document(faq):
+    """FAQ 전체를 하나의 완전한 문서로 임베딩"""
+
+    # 전체 내용을 하나의 문자열로 구성
+    content = f"""제목: {faq['title']}
+카테고리: {faq['category']}
+
+증상:
+{faq['content']['symptom']}
+
+원인:
+{faq['content']['cause']}
+
+해결 방법:
+"""
+
+    # 모든 해결 방법을 완전하게 포함
+    for solution in faq['content']['solutions']:
+        content += f"\n[방법 {solution['method']}] {solution['title']}\n"
+        for i, step in enumerate(solution['steps'], 1):
+            content += f"  {i}. {step}\n"
+        content += f"  ▶ 기대 결과: {solution['expected_result']}\n"
+
+    # Chroma에 저장할 Document 생성
+    return Document(
+        page_content=content,
+        metadata={
+            "id": faq["id"],
+            "category": faq["category"],
+            "title": faq["title"],
+            "tags": faq["tags"],
+            "helpful_count": faq["helpful_count"]
+        }
+    )
+```
+
+### 청킹 전략 장단점 비교
+
+| 전략 | 장점 | 단점 | PoC 적합성 |
+|------|------|------|-----------|
+| **문서 전체** (채택) | ✅ 해결 방법 절대 안 잘림<br>✅ 구현 단순<br>✅ 맥락 완전 유지 | FAQ가 매우 긴 경우 임베딩 품질 저하 가능 | ⭐⭐⭐⭐⭐ |
+| **의미 기반** (각 방법별) | ✅ 검색 정밀도 향상<br>✅ 긴 문서에 유리 | 맥락 정보 중복<br>DB 크기 증가 | ⭐⭐⭐ |
+| **고정 길이** (500자) | 구현 간단 | ❌ 해결 방법 잘림<br>❌ 불완전한 정보 | ❌ 부적합 |
+
+### 벡터 검색 흐름 (청킹 포함)
+
+```mermaid
+sequenceDiagram
+    participant User as 사용자 질의
+    participant Search as Search Node
+    participant Embed as Ollama BGE-M3
+    participant Chroma as Chroma VectorDB
+
+    Note over User,Chroma: 문서 전체 청킹 전략 사용
+
+    User->>Search: "메신저 알림이 안떠요"
+
+    rect rgb(255, 240, 200)
+        Note over Search,Embed: 1. 쿼리 임베딩
+        Search->>Embed: embed_query(query)
+        Embed->>Embed: 한글 임베딩 생성<br/>BGE-M3-Korean
+        Embed-->>Search: vector [768차원]
+    end
+
+    rect rgb(230, 255, 230)
+        Note over Search,Chroma: 2. 벡터 검색
+        Search->>Chroma: similarity_search(vector)
+        Chroma->>Chroma: 코사인 유사도 계산<br/>vs. 1000개 FAQ 문서
+        Note over Chroma: 각 FAQ = 완전한 1개 청크<br/>해결 방법 절대 안 잘림!
+        Chroma-->>Search: Top 3 FAQ (완전한 문서)
+    end
+
+    rect rgb(240, 230, 255)
+        Note over Search: 3. 결과 반환
+        Search->>Search: FAQ 1: 메신저 알림 설정 (전체)<br/>FAQ 2: 윈도우 알림 설정 (전체)<br/>FAQ 3: 메신저 재설치 (전체)
+    end
+```
+
+### 실제 데이터 예시
+
+#### 원본 FAQ (JSON)
+
+```json
+{
+  "id": "FAQ-001",
+  "category": "메신저",
+  "title": "신착 메시지 알림이 표시되지 않음",
+  "content": {
+    "symptom": "메신저에서 새로운 메시지를 받아도 알림창이 뜨지 않습니다.",
+    "cause": "알림 설정이 비활성화되어 있거나, 운영체제의 알림 권한이 거부된 경우 발생할 수 있습니다.",
+    "solutions": [
+      {
+        "method": 1,
+        "title": "메신저 알림 설정 확인",
+        "steps": [
+          "환경설정 메뉴를 엽니다",
+          "알림 탭을 선택합니다",
+          "'알림창' 옵션에 체크되어 있는지 확인합니다"
+        ],
+        "expected_result": "알림창에 체크가 되어있어야 합니다"
+      },
+      {
+        "method": 2,
+        "title": "윈도우 알림 설정 확인",
+        "steps": [
+          "윈도우 시작 메뉴를 엽니다",
+          "설정 > 시스템 > 알림 및 작업을 선택합니다",
+          "'앱 및 다른 보낸 사람의 알림 받기'를 켜짐으로 설정합니다"
+        ],
+        "expected_result": "모든 알림 설정이 켜짐 상태여야 합니다"
+      },
+      {
+        "method": 3,
+        "title": "메신저 재시작",
+        "steps": [
+          "작업 표시줄에서 메신저 아이콘을 우클릭합니다",
+          "'종료'를 선택합니다",
+          "메신저를 다시 실행합니다"
+        ],
+        "expected_result": "재시작 후 알림이 정상적으로 표시됩니다"
+      }
+    ]
+  }
+}
+```
+
+#### Chroma에 저장되는 형태
+
+```python
+# Document.page_content (임베딩 대상)
+"""
+제목: 신착 메시지 알림이 표시되지 않음
+카테고리: 메신저
+
+증상:
+메신저에서 새로운 메시지를 받아도 알림창이 뜨지 않습니다.
+
+원인:
+알림 설정이 비활성화되어 있거나, 운영체제의 알림 권한이 거부된 경우 발생할 수 있습니다.
+
+해결 방법:
+
+[방법 1] 메신저 알림 설정 확인
+  1. 환경설정 메뉴를 엽니다
+  2. 알림 탭을 선택합니다
+  3. '알림창' 옵션에 체크되어 있는지 확인합니다
+  ▶ 기대 결과: 알림창에 체크가 되어있어야 합니다
+
+[방법 2] 윈도우 알림 설정 확인
+  1. 윈도우 시작 메뉴를 엽니다
+  2. 설정 > 시스템 > 알림 및 작업을 선택합니다
+  3. '앱 및 다른 보낸 사람의 알림 받기'를 켜짐으로 설정합니다
+  ▶ 기대 결과: 모든 알림 설정이 켜짐 상태여야 합니다
+
+[방법 3] 메신저 재시작
+  1. 작업 표시줄에서 메신저 아이콘을 우클릭합니다
+  2. '종료'를 선택합니다
+  3. 메신저를 다시 실행합니다
+  ▶ 기대 결과: 재시작 후 알림이 정상적으로 표시됩니다
+"""
+
+# Document.metadata (필터링용)
+{
+    "id": "FAQ-001",
+    "category": "메신저",
+    "title": "신착 메시지 알림이 표시되지 않음",
+    "tags": ["알림", "메신저", "설정"],
+    "helpful_count": 982
+}
+```
+
+### 메타데이터 필터링 활용
+
+청킹과 함께 메타데이터 필터링을 사용하면 검색 정확도를 더욱 높일 수 있습니다.
+
+```python
+# 1. 카테고리 기반 필터링
+results = vectorstore.similarity_search(
+    query="알림이 안와요",
+    k=3,
+    filter={"category": "메신저"}
+)
+
+# 2. 품질 기반 필터링 (도움됨 수 높은 FAQ 우선)
+results = vectorstore.similarity_search(
+    query="로그인 오류",
+    k=5,
+    filter={"helpful_count": {"$gte": 100}}
+)
+
+# 3. 복합 필터링
+results = vectorstore.similarity_search(
+    query="설정 방법",
+    k=3,
+    filter={
+        "$and": [
+            {"category": {"$in": ["메신저", "알림"]}},
+            {"helpful_count": {"$gte": 50}}
+        ]
+    }
+)
+```
+
+### 청킹 품질 검증 방법
+
+```python
+def validate_chunking_completeness(vectorstore):
+    """각 FAQ의 해결 방법이 완전한지 검증"""
+
+    test_queries = [
+        "메신저 알림 설정",
+        "로그인 비밀번호 오류",
+        "파일 업로드 실패"
+    ]
+
+    for query in test_queries:
+        results = vectorstore.similarity_search(query, k=1)
+        doc = results[0]
+
+        # 해결 방법 개수와 "기대 결과" 개수가 일치하는지 확인
+        method_count = doc.page_content.count("[방법")
+        expected_result_count = doc.page_content.count("▶ 기대 결과:")
+
+        if method_count == expected_result_count:
+            print(f"✅ {query}: 모든 해결 방법 완전함 ({method_count}개)")
+        else:
+            print(f"⚠️  {query}: 불완전한 해결 방법 발견!")
+            print(f"   방법 수: {method_count}, 기대 결과: {expected_result_count}")
+```
+
+### 프로덕션 고려사항
+
+**Phase 1 (PoC - 현재)**:
+- ✅ 문서 전체 청킹 사용
+- FAQ 크기: 평균 1000-2000자
+- 해결 방법 잘림 위험: **제로**
+- 구현: 단순, 안정적
+
+**Phase 2 (프로덕션 - 향후)**:
+- 실제 데이터 분석 후 전략 재평가
+- 옵션 1: Parent-Child Document 전략 (긴 문서용)
+- 옵션 2: 의미 기반 청킹 (정밀 검색용)
+- A/B 테스트로 검색 품질 비교
+- 하이브리드 검색 (벡터 + 키워드) 도입 검토
 
 ---
 
