@@ -11,7 +11,7 @@ sys.path.insert(0, str(project_root))
 import os
 from typing import Dict, Any
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from dotenv import load_dotenv
 
