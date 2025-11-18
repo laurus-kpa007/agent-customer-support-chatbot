@@ -41,6 +41,10 @@ if "config" not in st.session_state:
         }
     }
 
+# 워크플로우 상태 저장 (대화 계속을 위해)
+if "workflow_state" not in st.session_state:
+    st.session_state.workflow_state = {}
+
 # 헤더
 st.title("🤖 고객지원 챗봇")
 st.markdown("---")
@@ -73,7 +77,37 @@ with st.sidebar:
                 "thread_id": st.session_state.session_id
             }
         }
+        st.session_state.debug_info = None
+        st.session_state.workflow_state = {}
         st.rerun()
+
+    # 디버그 정보 표시
+    st.markdown("---")
+    st.header("🔍 디버그 정보")
+
+    if "debug_info" in st.session_state and st.session_state.debug_info:
+        debug = st.session_state.debug_info
+
+        if "retrieved_docs" in debug and debug["retrieved_docs"]:
+            with st.expander("📚 검색 결과", expanded=False):
+                st.write(f"**검색된 문서 수**: {len(debug['retrieved_docs'])}개")
+                for i, doc in enumerate(debug["retrieved_docs"][:3], 1):
+                    st.markdown(f"""
+                    **[{i}] {doc['title']}**
+                    - 카테고리: {doc['category']}
+                    - 유사도: {doc['score']:.4f}
+                    - ID: {doc['id']}
+                    """)
+
+        if "solution_steps" in debug and debug["solution_steps"]:
+            with st.expander("📝 해결 단계", expanded=False):
+                for i, step in enumerate(debug["solution_steps"], 1):
+                    st.markdown(f"""
+                    **[단계 {i}]** {step.get('action', 'N/A')}
+                    - {step.get('description', 'N/A')[:100]}...
+                    """)
+    else:
+        st.info("채팅을 시작하면 디버그 정보가 표시됩니다")
 
 # 채팅 히스토리 표시
 for message in st.session_state.messages:
@@ -91,9 +125,10 @@ if prompt := st.chat_input("무엇을 도와드릴까요?"):
 
     # AI 응답 생성
     with st.chat_message("assistant"):
-        with st.spinner("🔍 검색 중..."):
-            # 상태 준비
+        with st.spinner("🔍 처리 중..."):
+            # 상태 준비 - 기존 워크플로우 상태와 병합
             input_state = {
+                **st.session_state.workflow_state,  # 기존 상태 유지
                 "messages": [
                     HumanMessage(content=msg["content"]) if msg["role"] == "user"
                     else AIMessage(content=msg["content"])
@@ -105,6 +140,8 @@ if prompt := st.chat_input("무엇을 도와드릴까요?"):
             # 워크플로우 실행
             try:
                 result = None
+                debug_info = {}
+
                 for event in st.session_state.app.stream(
                     input_state,
                     st.session_state.config
@@ -112,10 +149,28 @@ if prompt := st.chat_input("무엇을 도와드릴까요?"):
                     # 마지막 이벤트 저장
                     result = event
 
-                # 최신 AI 응답 추출
+                    # 디버그 정보 수집
+                    for node_name, node_output in event.items():
+                        if "retrieved_docs" in node_output:
+                            debug_info["retrieved_docs"] = node_output["retrieved_docs"]
+                        if "solution_steps" in node_output:
+                            debug_info["solution_steps"] = node_output["solution_steps"]
+                        if "relevance_score" in node_output:
+                            debug_info["relevance_score"] = node_output["relevance_score"]
+
+                # 디버그 정보 저장
+                st.session_state.debug_info = debug_info
+
+                # 최신 AI 응답 추출 및 상태 저장
                 if result:
                     # 결과에서 메시지 추출
                     for node_name, node_output in result.items():
+                        # 워크플로우 상태 저장 (다음 대화를 위해)
+                        st.session_state.workflow_state = {
+                            k: v for k, v in node_output.items()
+                            if k not in ["messages"]  # messages는 UI에서 관리
+                        }
+
                         if "messages" in node_output:
                             messages = node_output["messages"]
                             # 마지막 AI 메시지 찾기

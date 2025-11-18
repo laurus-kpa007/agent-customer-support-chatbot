@@ -15,14 +15,22 @@ from langgraph.graph import StateGraph, END
 from src.models.state import SupportState
 from src.nodes import (
     initialize_node,
+    handle_small_talk_node,
     search_knowledge_node,
     plan_response_node,
     respond_step_node,
     evaluate_status_node,
+    confirm_ticket_node,
+    evaluate_ticket_confirmation_node,
     create_ticket_node,
     send_notification_node,
 )
-from src.graph.routing import route_after_respond, route_after_evaluate
+from src.graph.routing import (
+    route_after_initialize,
+    route_after_respond,
+    route_after_evaluate,
+    route_after_ticket_confirmation
+)
 
 
 def create_workflow() -> StateGraph:
@@ -38,37 +46,62 @@ def create_workflow() -> StateGraph:
 
     # 노드 추가
     workflow.add_node("initialize", initialize_node)
+    workflow.add_node("handle_small_talk", handle_small_talk_node)
     workflow.add_node("search_knowledge", search_knowledge_node)
     workflow.add_node("plan_response", plan_response_node)
     workflow.add_node("respond_step", respond_step_node)
     workflow.add_node("evaluate_status", evaluate_status_node)
+    workflow.add_node("confirm_ticket", confirm_ticket_node)
+    workflow.add_node("evaluate_ticket_confirmation", evaluate_ticket_confirmation_node)
     workflow.add_node("create_ticket", create_ticket_node)
     workflow.add_node("send_notification", send_notification_node)
 
     # 엣지 정의
     workflow.set_entry_point("initialize")
-    workflow.add_edge("initialize", "search_knowledge")
+
+    # initialize 후 조건부 라우팅 (티켓 평가 / 스몰톡 / 새 대화 / 계속)
+    workflow.add_conditional_edges(
+        "initialize",
+        route_after_initialize,
+        {
+            "evaluate_ticket": "evaluate_ticket_confirmation",  # 티켓 확인 평가
+            "small_talk": "handle_small_talk",                   # 스몰톡
+            "search": "search_knowledge",                        # 새 대화 - 검색
+            "evaluate": "evaluate_status"                        # 기존 대화 - 평가
+        }
+    )
+
+    # 스몰톡 후 사용자 대기
+    workflow.add_edge("handle_small_talk", END)
+
     workflow.add_edge("search_knowledge", "plan_response")
     workflow.add_edge("plan_response", "respond_step")
 
-    # respond_step 후 조건부 라우팅 (Human-in-the-Loop)
-    workflow.add_conditional_edges(
-        "respond_step",
-        route_after_respond,
-        {
-            "wait_user": END,                # 첫 응답 - 사용자 답변 대기
-            "evaluate": "evaluate_status"    # 사용자가 답변함 - 평가
-        }
-    )
+    # respond_step 후 항상 사용자 대기 (Human-in-the-Loop)
+    workflow.add_edge("respond_step", END)
 
     # 조건부 라우팅: evaluate_status 이후
     workflow.add_conditional_edges(
         "evaluate_status",
         route_after_evaluate,
         {
-            "continue": "respond_step",      # 다음 단계 계속
-            "resolved": END,                 # 해결 완료
-            "escalate": "create_ticket"      # 티켓 생성
+            "continue": "respond_step",         # 다음 단계 계속
+            "resolved": END,                    # 해결 완료
+            "confirm_ticket": "confirm_ticket"  # 티켓 확인
+        }
+    )
+
+    # 티켓 확인 후 사용자 대기
+    workflow.add_edge("confirm_ticket", END)
+
+    # 티켓 확인 평가 후 조건부 라우팅
+    workflow.add_conditional_edges(
+        "evaluate_ticket_confirmation",
+        route_after_ticket_confirmation,
+        {
+            "create": "create_ticket",     # 티켓 생성
+            "cancelled": END,               # 취소
+            "wait": END                     # 재확인 대기
         }
     )
 

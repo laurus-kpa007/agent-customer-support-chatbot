@@ -11,31 +11,54 @@ sys.path.insert(0, str(project_root))
 from src.models.state import SupportState
 
 
-def route_after_respond(state: SupportState) -> str:
+def route_after_initialize(state: SupportState) -> str:
     """
-    respond_step 노드 이후 다음 액션 결정
-    - 첫 응답이면 END (사용자 답변 대기)
-    - 사용자가 이미 답변했으면 evaluate로
+    initialize 노드 이후 다음 액션 결정
+    - 티켓 확인 중이면 티켓 평가 (evaluate_ticket_confirmation)
+    - 스몰톡이면 스몰톡 처리 (handle_small_talk)
+    - 기존 대화 계속이면 평가 (evaluate_status)
+    - 새 대화면 검색 (search_knowledge)
 
     Args:
         state: 현재 상태
 
     Returns:
-        다음 노드 이름 ("wait_user", "evaluate")
+        다음 노드 이름 ("evaluate_ticket", "small_talk", "search", "evaluate")
     """
 
-    # 메시지 수를 체크해서 첫 응답인지 판단
-    # 첫 질문(1개) + AI 첫 응답(1개) = 2개이면 사용자 대기
-    # 그 이상이면 사용자가 이미 답변한 것
-    message_count = len(state.get("messages", []))
+    status = state.get("status")
 
-    # AI가 방금 응답을 추가했으므로
-    # 2개 이하면 첫 응답 (사용자 1 + AI 1)
-    if message_count <= 2:
-        return "wait_user"
+    # 티켓 확인 평가 우선
+    if status == "evaluating_ticket":
+        return "evaluate_ticket"
 
-    # 그 이상이면 사용자가 답변한 것이므로 evaluate
-    return "evaluate"
+    # 스몰톡 처리
+    if status == "small_talking":
+        # print(f"[RouteAfterInit] 스몰톡 감지 → small_talk")  # 디버그
+        return "small_talk"
+
+    # 대화 평가 vs 새 검색
+    route = "evaluate" if status == "evaluating" else "search"
+    # print(f"[RouteAfterInit] status={status} → {route}")  # 디버그
+
+    return route
+
+
+def route_after_respond(state: SupportState) -> str:
+    """
+    respond_step 노드 이후 다음 액션 결정
+    - 항상 사용자 답변 대기 (Human-in-the-Loop)
+
+    Args:
+        state: 현재 상태
+
+    Returns:
+        다음 노드 이름 ("wait_user")
+    """
+
+    # respond_step은 항상 사용자 응답을 기다림
+    # 사용자가 응답하면 initialize → evaluate 경로로 재진입
+    return "wait_user"
 
 
 def route_after_evaluate(state: SupportState) -> str:
@@ -46,24 +69,46 @@ def route_after_evaluate(state: SupportState) -> str:
         state: 현재 상태
 
     Returns:
-        다음 노드 이름 ("continue", "resolved", "escalate")
+        다음 노드 이름 ("continue", "resolved", "confirm_ticket")
     """
 
     # 해결됨으로 표시된 경우
     if state["status"] == "resolved":
         return "resolved"
 
-    # 에스컬레이션 (티켓 생성)
+    # 에스컬레이션 (티켓 확인 단계로)
     if state["status"] == "escalated":
-        return "escalate"
+        return "confirm_ticket"
 
-    # 모든 단계를 시도했는데도 해결 안됨
+    # 모든 단계를 시도했는데도 해결 안됨 → 티켓 확인
     if state["current_step"] >= len(state["solution_steps"]):
-        return "escalate"
+        return "confirm_ticket"
 
-    # 최대 시도 횟수 초과
+    # 최대 시도 횟수 초과 → 티켓 확인
     if state.get("attempts", 0) >= 10:
-        return "escalate"
+        return "confirm_ticket"
 
     # 다음 단계 계속
     return "continue"
+
+
+def route_after_ticket_confirmation(state: SupportState) -> str:
+    """
+    티켓 확인 평가 후 다음 액션 결정
+
+    Args:
+        state: 현재 상태
+
+    Returns:
+        다음 노드 이름 ("create", "cancelled", "wait")
+    """
+
+    ticket_confirmed = state.get("ticket_confirmed")
+
+    if ticket_confirmed is True:
+        return "create"
+    elif ticket_confirmed is False:
+        return "cancelled"
+    else:
+        # 명확하지 않은 응답 - 재확인 대기
+        return "wait"
