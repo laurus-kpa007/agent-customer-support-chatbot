@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.models.state import SupportState
 from src.nodes import (
@@ -70,7 +70,9 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("send_notification", END)
 
     # 체크포인터 생성 (대화 상태 저장)
-    memory = SqliteSaver.from_conn_string("checkpoints.db")
+    # MemorySaver: 메모리 기반 저장 (재시작시 초기화)
+    # 영구 저장이 필요하면 langgraph-checkpoint-sqlite 패키지 설치 필요
+    memory = MemorySaver()
 
     # 컴파일
     app = workflow.compile(
