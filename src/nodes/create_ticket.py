@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage
 from dotenv import load_dotenv
 
 from src.models.state import SupportState
+from src.utils.state_reset import reset_conversation_state
 
 # 환경 변수 로드
 load_dotenv()
@@ -137,5 +138,8 @@ JSON만 출력하세요."""),
 감사합니다! 😊"""
 
     state["messages"].append(AIMessage(content=response_text))
+
+    # 대화 상태 초기화 (새로운 대화를 시작할 수 있도록)
+    state = reset_conversation_state(state)
 
     return state

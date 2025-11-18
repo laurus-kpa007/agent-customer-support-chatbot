@@ -34,23 +34,35 @@ class SupportState(TypedDict):
 
     # 상태 추적
     status: Literal[
-        "initialized",      # 초기화됨
-        "searching",        # 검색 중
-        "planning",         # 답변 계획 중
-        "responding",       # 응답 중
-        "waiting_user",     # 사용자 응답 대기
-        "evaluating",       # 평가 중
-        "resolved",         # 해결됨
-        "escalated",        # 에스컬레이션
-        "ticket_created"    # 티켓 생성됨
+        "initialized",        # 초기화됨
+        "searching",          # 검색 중
+        "small_talking",      # 스몰톡 중
+        "planning",           # 답변 계획 중
+        "responding",         # 응답 중
+        "waiting_user",       # 사용자 응답 대기
+        "evaluating",         # 평가 중
+        "resolved",           # 해결됨
+        "escalated",          # 에스컬레이션
+        "confirming_ticket",  # 티켓 확인 중
+        "evaluating_ticket",  # 티켓 응답 평가 중
+        "ticket_created",     # 티켓 생성됨
+        "cancelled"           # 티켓 취소됨
     ]
 
     # 에스컬레이션 관련
     attempts: int                            # 시도 횟수
     unresolved_reason: Optional[str]         # 미해결 사유
     ticket_id: Optional[str]                 # 생성된 티켓 ID
+    ticket_confirmed: Optional[bool]         # 티켓 생성 확인 (True: 생성, False: 취소, None: 미정)
+
+    # 의도 분류
+    intent: Optional[Literal["small_talk", "technical_support", "continue_conversation"]]  # 사용자 의도
+    intent_confidence: Optional[float]       # 의도 분류 신뢰도
 
     # 메타데이터
     user_id: str                             # 사용자 ID
     session_id: str                          # 세션 ID
     started_at: str                          # 시작 시간
+
+    # 디버그 정보
+    debug_info: Optional[Dict]               # 디버그 정보

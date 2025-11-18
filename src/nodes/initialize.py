@@ -58,10 +58,15 @@ def initialize_node(state: SupportState) -> Dict[str, Any]:
 
     # 티켓 확인 상태인지 확인
     is_confirming_ticket = state.get("status") == "confirming_ticket"
+    is_evaluating_ticket = state.get("status") == "evaluating_ticket"
 
     if is_confirming_ticket:
         # 티켓 확인 응답 평가로
         state["status"] = "evaluating_ticket"
+        return state
+
+    if is_evaluating_ticket:
+        # 티켓 확인 응답을 평가 중 - 상태 유지
         return state
 
     # 대화 계속 여부 판단

@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage
 from dotenv import load_dotenv
 
 from src.models.state import SupportState
+from src.utils.state_reset import reset_conversation_state
 
 # 환경 변수 로드
 load_dotenv()
@@ -65,6 +66,8 @@ def evaluate_status_node(state: SupportState) -> Dict[str, Any]:
         state["messages"].append(
             AIMessage(content="🎉 문제가 해결되어 다행입니다!\n\n추가로 도움이 필요하시면 언제든 문의해주세요. 😊")
         )
+        # 대화 상태 초기화
+        state = reset_conversation_state(state)
         return state
 
     # 에스컬레이션
@@ -131,6 +134,8 @@ JSON만 출력하세요."""),
             state["messages"].append(
                 AIMessage(content="🎉 문제가 해결되어 다행입니다!\n\n추가로 도움이 필요하시면 언제든 문의해주세요. 😊")
             )
+            # 대화 상태 초기화
+            state = reset_conversation_state(state)
         elif decision == "escalate":
             # print("[Evaluate] LLM 판단 → escalate")  # 디버그
             state["status"] = "escalated"
