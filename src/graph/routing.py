@@ -11,6 +11,33 @@ sys.path.insert(0, str(project_root))
 from src.models.state import SupportState
 
 
+def route_after_respond(state: SupportState) -> str:
+    """
+    respond_step 노드 이후 다음 액션 결정
+    - 첫 응답이면 END (사용자 답변 대기)
+    - 사용자가 이미 답변했으면 evaluate로
+
+    Args:
+        state: 현재 상태
+
+    Returns:
+        다음 노드 이름 ("wait_user", "evaluate")
+    """
+
+    # 메시지 수를 체크해서 첫 응답인지 판단
+    # 첫 질문(1개) + AI 첫 응답(1개) = 2개이면 사용자 대기
+    # 그 이상이면 사용자가 이미 답변한 것
+    message_count = len(state.get("messages", []))
+
+    # AI가 방금 응답을 추가했으므로
+    # 2개 이하면 첫 응답 (사용자 1 + AI 1)
+    if message_count <= 2:
+        return "wait_user"
+
+    # 그 이상이면 사용자가 답변한 것이므로 evaluate
+    return "evaluate"
+
+
 def route_after_evaluate(state: SupportState) -> str:
     """
     evaluate_status 노드 이후 다음 액션 결정

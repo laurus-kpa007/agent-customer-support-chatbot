@@ -22,7 +22,7 @@ from src.nodes import (
     create_ticket_node,
     send_notification_node,
 )
-from src.graph.routing import route_after_evaluate
+from src.graph.routing import route_after_respond, route_after_evaluate
 
 
 def create_workflow() -> StateGraph:
@@ -51,8 +51,15 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("search_knowledge", "plan_response")
     workflow.add_edge("plan_response", "respond_step")
 
-    # respond_step 후 인터럽트 없이 바로 evaluate로 (Human-in-the-Loop은 UI 레벨에서 처리)
-    workflow.add_edge("respond_step", "evaluate_status")
+    # respond_step 후 조건부 라우팅 (Human-in-the-Loop)
+    workflow.add_conditional_edges(
+        "respond_step",
+        route_after_respond,
+        {
+            "wait_user": END,                # 첫 응답 - 사용자 답변 대기
+            "evaluate": "evaluate_status"    # 사용자가 답변함 - 평가
+        }
+    )
 
     # 조건부 라우팅: evaluate_status 이후
     workflow.add_conditional_edges(
