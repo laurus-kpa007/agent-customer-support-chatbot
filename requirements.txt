@@ -1,0 +1,29 @@
+# LangChain 및 LangGraph
+langchain==0.1.20
+langchain-core==0.1.52
+langchain-community==0.0.38
+langgraph==0.0.55
+
+# Ollama (로컬 LLM)
+langchain-ollama==0.1.0
+ollama==0.2.1
+
+# 벡터 스토어
+chromadb==0.4.24
+
+# Streamlit WebUI
+streamlit==1.32.0
+streamlit-chat==0.1.1
+
+# 데이터 처리
+pandas==2.2.1
+numpy==1.26.4
+
+# 유틸리티
+python-dotenv==1.0.1
+pydantic==2.6.4
+
+# 개발 도구
+jupyter==1.0.0
+pytest==8.1.1
+black==24.3.0
