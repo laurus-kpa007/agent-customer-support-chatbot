@@ -82,11 +82,12 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
 
 ### 프로덕션 고려 사항
 - **프레임워크**: Microsoft Agent Framework
-- **지식 그래프**: Microsoft GraphRAG + Neo4j
-- **벡터 DB**: Azure AI Search
+- **벡터 DB**: Azure AI Search (하이브리드 검색)
+- **임베딩**: Azure OpenAI Embeddings (다국어 지원)
 - **데이터베이스**: PostgreSQL/CosmosDB
 - **배포**: Azure AI Foundry
 - **모니터링**: OpenTelemetry + Azure Application Insights
+- **검색 고도화**: Re-ranking, Query Expansion, 메타데이터 필터링
 
 ## 📚 문서
 
@@ -262,13 +263,16 @@ PoC 검증 후 다음 단계로 전환:
    - LangGraph → MS Agent Framework
    - 엔터프라이즈 기능 추가 (모니터링, 보안 등)
 
-2. **GraphRAG 도입**
-   - FAISS → GraphRAG + Neo4j
-   - 복잡한 관계 기반 검색
+2. **검색 고도화**
+   - 하이브리드 검색 (벡터 + 키워드)
+   - Re-ranking 모델 적용
+   - Query Expansion (쿼리 확장)
+   - 메타데이터 필터링 강화
 
 3. **웹 크롤링 자동화**
    - 실제 FAQ/Q&A 게시판 크롤링
    - 주기적 업데이트 스케줄링
+   - 증분 인덱싱 (변경된 문서만 업데이트)
 
 4. **프로덕션 인프라**
    - Azure AI Foundry 배포

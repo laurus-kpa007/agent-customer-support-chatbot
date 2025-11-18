@@ -437,8 +437,8 @@ def initialize_node(state: SupportState) -> SupportState:
 ### 2. Search Knowledge Node (지식 검색)
 
 ```python
-from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
 
 def search_knowledge_node(state: SupportState) -> SupportState:
@@ -449,11 +449,10 @@ def search_knowledge_node(state: SupportState) -> SupportState:
     """
 
     # 벡터 스토어 로드
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    vectorstore = FAISS.load_local(
-        "data/vectorstore",
-        embeddings,
-        allow_dangerous_deserialization=True
+    embeddings = OllamaEmbeddings(model="bge-m3-korean")
+    vectorstore = Chroma(
+        persist_directory="data/vectorstore",
+        embedding_function=embeddings
     )
 
     # 유사 문서 검색 (상위 3개)
@@ -478,7 +477,7 @@ def search_knowledge_node(state: SupportState) -> SupportState:
 
     state["retrieved_docs"] = retrieved_docs
 
-    # 최고 점수 저장 (낮을수록 좋음 - FAISS는 L2 distance)
+    # 최고 점수 저장 (낮을수록 좋음 - 코사인 거리)
     state["relevance_score"] = docs_with_scores[0][1] if docs_with_scores else 1.0
     state["status"] = "planning"
 
@@ -488,7 +487,7 @@ def search_knowledge_node(state: SupportState) -> SupportState:
 ### 3. Plan Response Node (답변 계획)
 
 ```python
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 import json
 
@@ -499,7 +498,7 @@ def plan_response_node(state: SupportState) -> SupportState:
     - LLM을 활용한 계획 수립
     """
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
 
     # 검색된 문서들 포맷팅
     docs_context = "\n\n".join([
@@ -614,7 +613,7 @@ def respond_step_node(state: SupportState) -> SupportState:
 ### 5. Evaluate Status Node (상태 평가)
 
 ```python
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 
 def evaluate_status_node(state: SupportState) -> SupportState:
@@ -624,7 +623,7 @@ def evaluate_status_node(state: SupportState) -> SupportState:
     - 다음 단계로 진행할지 결정
     """
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
 
     # 마지막 사용자 응답 가져오기
     last_user_message = ""
@@ -704,7 +703,7 @@ def create_ticket_node(state: SupportState) -> SupportState:
     - Q&A 게시판에 등록 (PoC: JSON 파일 저장)
     """
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOllama(model="gemma2:27b", temperature=0)
 
     # 대화 내용 포맷팅
     conversation = "\n".join([
