@@ -93,17 +93,25 @@ def evaluate_status_node(state: SupportState) -> Dict[str, Any]:
         ("system", """당신은 고객지원 대화를 분석하는 전문가입니다.
 사용자의 응답을 분석하여 다음 중 하나를 판단하세요:
 
-1. "resolved": 문제가 해결됨
-2. "continue": 현재 단계가 효과 없음, 다음 단계 필요
-3. "escalate": 사용자가 명시적으로 문의 등록 요청
+1. "resolved": 문제가 완전히 해결됨 (사용자가 명시적으로 해결되었다고 함)
+2. "waiting": 사용자가 단계를 수행하겠다고 동의했지만 아직 결과를 보고하지 않음
+3. "continue": 현재 단계 완료 후 다음 단계 필요, 또는 문제가 여전함
+4. "escalate": 사용자가 명시적으로 문의 등록/상담원 연결 요청
 
 판단 기준:
-- "해결됐어요", "됐어요", "감사합니다" 등 → resolved
-- "안돼요", "여전히", "체크되어 있는데", "안 됩니다" 등 → continue
-- "등록해주세요", "문의할게요", "상담원" 등 → escalate
+- "해결됐어요", "이제 돼요", "작동합니다", "감사합니다(해결 후)" 등 → resolved
+- "알겠어요", "한번 해볼게요", "시도해볼게", "확인해볼게", "테스트해볼게", "해보겠습니다" 등 → waiting
+    - 주의: 사용자가 단계를 수행하겠다고 동의만 한 경우, 아직 결과를 기다려야 합니다.
+    - 예1: "알겠어 한번 시도해볼께" → 아직 테스트 안함 → waiting
+    - 예2: "확인해볼게요" → 아직 확인 안함 → waiting
+- "네트워크는 정상이야", "확인했는데 안돼요", "설정은 맞아요", "다음 단계 알려줘", "파일 크기는 작아요" 등 → continue
+    - 주의: 사용자가 현재 단계의 점검 사항이 '정상'이라고 말하는 것은 문제가 해결되었다는 뜻이 아닐 수 있습니다.
+    - 예1: "인터넷은 연결되어 있어" → 인터넷 문제는 아니지만 원래 문제는 여전함 → continue
+    - 예2: "파일 크기는 1MB야" → 용량 문제는 아니지만 업로드 실패는 여전함 → continue
+- "등록해주세요", "문의할게요", "상담원 연결해줘" 등 → escalate
 
 JSON 형식으로 응답:
-{{"decision": "resolved|continue|escalate", "reason": "판단 이유"}}
+{{"decision": "resolved|waiting|continue|escalate", "reason": "판단 이유"}}
 
 JSON만 출력하세요."""),
         ("user", """현재 단계: {current_step}
@@ -136,6 +144,14 @@ JSON만 출력하세요."""),
             )
             # 대화 상태 초기화
             state = reset_conversation_state(state)
+        elif decision == "waiting":
+            # print("[Evaluate] LLM 판단 → waiting")  # 디버그
+            # 사용자가 단계를 수행하겠다고 동의했지만 아직 결과를 보고하지 않음
+            # 같은 단계를 유지하고 사용자 응답 대기
+            state["status"] = "waiting_user"
+            state["messages"].append(
+                AIMessage(content="네, 확인 부탁드립니다. 결과를 알려주시면 다음 단계로 안내해드리겠습니다. 😊")
+            )
         elif decision == "escalate":
             # print("[Evaluate] LLM 판단 → escalate")  # 디버그
             state["status"] = "escalated"

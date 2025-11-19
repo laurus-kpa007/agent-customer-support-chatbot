@@ -96,7 +96,20 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("handle_small_talk", END)
 
     workflow.add_edge("search_knowledge", "plan_response")
-    workflow.add_edge("plan_response", "respond_step")
+    # plan_response 후 조건부 라우팅 (검색 실패 시 티켓 확인으로 이동)
+    def route_after_plan(state):
+        if state.get("status") == "escalated":
+            return "confirm_ticket"
+        return "respond_step"
+
+    workflow.add_conditional_edges(
+        "plan_response",
+        route_after_plan,
+        {
+            "confirm_ticket": "confirm_ticket",
+            "respond_step": "respond_step"
+        }
+    )
 
     # respond_step 후 항상 사용자 대기 (Human-in-the-Loop)
     workflow.add_edge("respond_step", END)

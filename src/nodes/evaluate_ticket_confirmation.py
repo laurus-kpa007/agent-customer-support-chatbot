@@ -50,6 +50,7 @@ def evaluate_ticket_confirmation_node(state: SupportState) -> Dict[str, Any]:
         ("system", """당신은 사용자의 의사를 정확히 파악하는 전문가입니다.
 
 사용자가 문의 티켓 등록을 원하는지 판단하세요.
+또한, 사용자가 추가로 언급한 내용이 있다면 추출하세요.
 
 다음 중 하나로 분류하세요:
 1. "yes": 티켓 등록을 원함 (긍정 표현)
@@ -59,7 +60,11 @@ def evaluate_ticket_confirmation_node(state: SupportState) -> Dict[str, Any]:
 3. "unclear": 의사가 명확하지 않음
 
 JSON 형식으로 응답하세요:
-{{"decision": "yes/no/unclear", "reason": "판단 이유"}}"""),
+{{
+  "decision": "yes/no/unclear",
+  "reason": "판단 이유",
+  "additional_info": "사용자가 덧붙인 추가 정보 (없으면 null)"
+}}"""),
         ("user", f"사용자 응답: {last_user_message}")
     ])
 
@@ -81,6 +86,7 @@ JSON 형식으로 응답하세요:
         if decision == "yes":
             state["ticket_confirmed"] = True
             state["status"] = "escalated"
+            state["ticket_additional_info"] = evaluation.get("additional_info")
         elif decision == "no":
             state["ticket_confirmed"] = False
             state["status"] = "cancelled"

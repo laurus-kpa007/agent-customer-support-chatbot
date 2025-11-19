@@ -97,6 +97,7 @@ JSON만 출력하세요."""),
         "session_id": state["session_id"],
         "title": summary.get("title", "고객 문의"),
         "summary": summary.get("summary", state["current_query"]),
+        "additional_info": state.get("ticket_additional_info"),
         "attempted_solutions": summary.get("attempted_solutions", []),
         "conversation_history": [
             {
@@ -139,7 +140,7 @@ JSON만 출력하세요."""),
 
     state["messages"].append(AIMessage(content=response_text))
 
-    # 대화 상태 초기화 (새로운 대화를 시작할 수 있도록)
-    state = reset_conversation_state(state)
+    # 대화 상태 초기화는 send_notification_node에서 수행
+    # state = reset_conversation_state(state)
 
     return state

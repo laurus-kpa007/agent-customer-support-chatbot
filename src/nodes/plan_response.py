@@ -44,16 +44,11 @@ def plan_response_node(state: SupportState) -> Dict[str, Any]:
     )
 
     # 검색된 문서가 없는 경우
+    # 검색된 문서가 없는 경우
     if not state["retrieved_docs"]:
-        state["solution_steps"] = [{
-            "step": 1,
-            "action": "관련 정보 없음",
-            "description": "죄송합니다. 해당 질문과 관련된 FAQ를 찾을 수 없습니다.",
-            "expected_result": "고객센터에 문의해주세요.",
-            "completed": False
-        }]
-        state["current_step"] = 0
-        state["status"] = "responding"
+        print("No relevant documents found. Escalating to ticket creation.")
+        state["status"] = "escalated"
+        state["unresolved_reason"] = "관련 FAQ 없음"
         return state
 
     # 검색된 문서들 포맷팅
