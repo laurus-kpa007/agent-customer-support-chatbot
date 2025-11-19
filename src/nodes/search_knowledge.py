@@ -55,8 +55,8 @@ def search_knowledge_node(state: SupportState) -> Dict[str, Any]:
     )
 
     # 유사도 임계값 필터링 (코사인 거리 기준)
-    # 0.0 = 완전 동일, 0.7 이하 = 관련성 있음
-    relevance_threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.7"))
+    # 0.0 = 완전 동일, 0.3 = 매우 유사, 0.5 = 관련성 있음
+    relevance_threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.5"))
 
     # 검색 결과 저장 (임계값 이하만)
     retrieved_docs = []
