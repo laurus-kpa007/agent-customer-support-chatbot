@@ -63,16 +63,17 @@ def search_knowledge_node(state: SupportState) -> Dict[str, Any]:
     threshold = 0.9  # 임계값 (0.82~0.86 정도의 점수가 나와서 0.9로 상향 조정)
 
     for doc, score in docs_with_scores:
-        retrieved_docs.append({
-            "id": doc.metadata.get("id", ""),
-            "category": doc.metadata.get("category", ""),
-            "title": doc.metadata.get("title", ""),
-            "content": doc.page_content,
-            "tags": doc.metadata.get("tags", []),
-            "score": float(score),
-            "source": doc.metadata.get("source", "faq"),
-            "helpful_count": doc.metadata.get("helpful_count", 0)
-        })
+        if score <= threshold:
+            retrieved_docs.append({
+                "id": doc.metadata.get("id", ""),
+                "category": doc.metadata.get("category", ""),
+                "title": doc.metadata.get("title", ""),
+                "content": doc.page_content,
+                "tags": doc.metadata.get("tags", []),
+                "score": float(score),
+                "source": doc.metadata.get("source", "faq"),
+                "helpful_count": doc.metadata.get("helpful_count", 0)
+            })
 
     # 최대 3개까지만 사용
     retrieved_docs = retrieved_docs[:3]

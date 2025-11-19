@@ -105,19 +105,18 @@ def create_workflow() -> StateGraph:
 
     workflow.add_edge("search_knowledge", "plan_response")
 
-    # plan_response 후 조건부 라우팅
+    # plan_response 후 조건부 라우팅 (검색 실패 시 티켓 확인으로 이동)
     def route_after_plan(state):
-        # 검색 결과가 없으면 바로 티켓 확인으로
         if state.get("status") == "escalated":
-            return "no_results"
-        return "respond"
+            return "confirm_ticket"
+        return "respond_step"
 
     workflow.add_conditional_edges(
         "plan_response",
         route_after_plan,
         {
-            "respond": "respond_step",          # 검색 결과 있음 - 단계별 안내
-            "no_results": "confirm_ticket"      # 검색 결과 없음 - 티켓 확인
+            "confirm_ticket": "confirm_ticket",  # 검색 결과 없음 - 티켓 확인
+            "respond_step": "respond_step"       # 검색 결과 있음 - 단계별 안내
         }
     )
 
