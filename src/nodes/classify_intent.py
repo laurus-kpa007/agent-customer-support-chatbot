@@ -68,22 +68,30 @@ def classify_intent_node(state: SupportState) -> Dict[str, Any]:
    예시:
    - 인사: "안녕하세요", "Hello", "Hi", "좋은 아침", "반갑습니다"
    - 감사: "감사합니다", "고마워요", "잘 부탁드립니다"
-   - 챗봇 관련: "넌 누구니?", "당신은 누구세요?", "무엇을 도와주나요?", "어떤 일을 하나요?"
+   - 챗봇 관련: "넌 누구니?", "당신은 누구세요?", "무엇을 도와주나요?"
    - 잡담: "날씨가 좋네요", "요즘 어때요?"
-   - 단, "안녕하세요, 로그인이 안돼요"처럼 기술 문의가 포함되면 technical_support
 
-2. "technical_support": 기술 지원, 문제 해결, 문의 요청
+2. "technical_support": 명확하고 구체적인 기술 문제/요청
    예시:
-   - 문제: "로그인이 안돼요", "파일 업로드 오류", "메시지가 안 보내져요"
-   - 요청: "비밀번호를 잊어버렸어요", "계정을 삭제하고 싶어요"
+   - 구체적 문제: "로그인이 안돼요", "파일 업로드 오류", "메시지가 안 보내져요"
+   - 구체적 요청: "비밀번호를 잊어버렸어요", "계정을 삭제하고 싶어요"
    - 사용법: "이 기능은 어떻게 사용하나요?", "설정을 변경하려면?"
 
-중요:
-- 챗봇 자체에 대한 질문은 "small_talk"로 분류하세요.
-- 인사와 문의가 함께 있으면 "technical_support"로 분류하세요.
+3. "vague_problem": 문제가 있지만 증상이 불명확한 경우 (Human-in-the-Loop 필요)
+   예시:
+   - 모호한 표현: "메신저가 이상해", "앱이 좀 그래", "뭔가 안 돼"
+   - 추상적: "문제가 생겼어", "잘 안 돼요", "이상한데요"
+   - 감정만 표현: "답답해요", "짜증나네요", "속상해"
+   → 이 경우 구체적인 증상을 먼저 물어봐야 함!
+
+판단 기준:
+- 구체적인 기능/증상 언급 → technical_support
+- 문제는 있지만 증상 불명확 → vague_problem
+- 인사와 명확한 문의가 함께 → technical_support
+- 인사와 모호한 문제가 함께 → vague_problem
 
 JSON 형식으로 응답하세요:
-{{"intent": "small_talk/technical_support", "reason": "분류 이유", "confidence": 0.0-1.0}}"""),
+{{"intent": "small_talk/technical_support/vague_problem", "reason": "분류 이유", "confidence": 0.0-1.0}}"""),
         ("user", f"사용자 입력: {last_user_message}")
     ])
 
@@ -109,6 +117,9 @@ JSON 형식으로 응답하세요:
 
         if intent == "small_talk":
             state["status"] = "small_talking"
+        elif intent == "vague_problem":
+            state["status"] = "clarifying"  # 증상 명확화 필요
+            state["needs_clarification"] = True
         else:  # technical_support
             state["status"] = "searching"
 

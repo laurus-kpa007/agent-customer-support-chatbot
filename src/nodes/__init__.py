@@ -6,6 +6,7 @@
 from .initialize import initialize_node
 from .classify_intent import classify_intent_node
 from .handle_small_talk import handle_small_talk_node
+from .ask_symptoms import ask_symptoms_node
 from .search_knowledge import search_knowledge_node
 from .plan_response import plan_response_node
 from .respond_step import respond_step_node
@@ -19,6 +20,7 @@ __all__ = [
     "initialize_node",
     "classify_intent_node",
     "handle_small_talk_node",
+    "ask_symptoms_node",
     "search_knowledge_node",
     "plan_response_node",
     "respond_step_node",

@@ -69,6 +69,17 @@ def initialize_node(state: SupportState) -> Dict[str, Any]:
         # 티켓 확인 응답을 평가 중 - 상태 유지
         return state
 
+    # 증상 질문 후 사용자 응답인지 확인
+    was_clarifying = state.get("needs_clarification") == True and state.get("status") == "waiting_user"
+    if was_clarifying:
+        # 증상을 받았으니 이제 검색으로
+        state["needs_clarification"] = False
+        state["status"] = "searching"
+        # 마지막 사용자 응답을 current_query로 업데이트
+        state["current_query"] = current_query
+        # print("[Initialize] → 증상 받음, 검색 시작")
+        return state
+
     # 대화 계속 여부 판단
     # 조건: 기존에 solution_steps가 있고, 현재 waiting_user 상태였다면 계속
     has_steps = state.get("solution_steps") and len(state.get("solution_steps", [])) > 0

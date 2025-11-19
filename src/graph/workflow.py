@@ -17,6 +17,7 @@ from src.nodes import (
     initialize_node,
     classify_intent_node,
     handle_small_talk_node,
+    ask_symptoms_node,
     search_knowledge_node,
     plan_response_node,
     respond_step_node,
@@ -49,6 +50,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("initialize", initialize_node)
     workflow.add_node("classify_intent", classify_intent_node)
     workflow.add_node("handle_small_talk", handle_small_talk_node)
+    workflow.add_node("ask_symptoms", ask_symptoms_node)
     workflow.add_node("search_knowledge", search_knowledge_node)
     workflow.add_node("plan_response", plan_response_node)
     workflow.add_node("respond_step", respond_step_node)
@@ -72,11 +74,13 @@ def create_workflow() -> StateGraph:
         }
     )
 
-    # classify_intent 후 조건부 라우팅 (스몰톡 / 기술 지원)
+    # classify_intent 후 조건부 라우팅 (스몰톡 / 증상 질문 / 기술 지원)
     def route_after_classify(state):
         intent = state.get("intent", "technical_support")
         if intent == "small_talk":
             return "small_talk"
+        elif intent == "vague_problem":
+            return "ask_symptoms"  # 모호한 문제 → 증상 질문
         else:  # technical_support or continue_conversation
             if intent == "continue_conversation":
                 return "evaluate"
@@ -87,6 +91,7 @@ def create_workflow() -> StateGraph:
         route_after_classify,
         {
             "small_talk": "handle_small_talk",       # 스몰톡
+            "ask_symptoms": "ask_symptoms",           # 모호한 문제 → 증상 질문
             "search": "search_knowledge",             # 기술 지원 - 검색
             "evaluate": "evaluate_status"             # 대화 계속 - 평가
         }
@@ -94,6 +99,9 @@ def create_workflow() -> StateGraph:
 
     # 스몰톡 후 사용자 대기
     workflow.add_edge("handle_small_talk", END)
+
+    # 증상 질문 후 사용자 대기 (Human-in-the-Loop)
+    workflow.add_edge("ask_symptoms", END)
 
     workflow.add_edge("search_knowledge", "plan_response")
 

@@ -57,8 +57,9 @@ class SupportState(TypedDict):
     ticket_additional_info: Optional[str]    # 티켓 추가 정보 (사용자 입력)
 
     # 의도 분류
-    intent: Optional[Literal["small_talk", "technical_support", "continue_conversation"]]  # 사용자 의도
+    intent: Optional[Literal["small_talk", "technical_support", "vague_problem", "continue_conversation"]]  # 사용자 의도
     intent_confidence: Optional[float]       # 의도 분류 신뢰도
+    needs_clarification: Optional[bool]      # 증상 명확화 필요 여부
 
     # 메타데이터
     user_id: str                             # 사용자 ID

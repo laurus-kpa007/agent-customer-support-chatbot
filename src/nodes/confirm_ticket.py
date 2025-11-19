@@ -89,10 +89,10 @@ JSON만 출력하세요."""),
 
     # 확인 메시지 생성
     attempted_steps = state.get("current_step", 0)
-    unresolved_reason = state.get("unresolved_reason", "")
+    unresolved_reason = state.get("unresolved_reason") or ""
 
     # 검색 결과가 없는 경우 (FAQ를 찾을 수 없음)
-    if "FAQ를 찾을 수 없음" in unresolved_reason or "관련 FAQ" in unresolved_reason:
+    if unresolved_reason and ("FAQ를 찾을 수 없음" in unresolved_reason or "관련 FAQ" in unresolved_reason):
         response_text = (
             "🔍 죄송합니다.\n\n"
             "**관련 해결책을 찾을 수 없습니다.**\n\n"
