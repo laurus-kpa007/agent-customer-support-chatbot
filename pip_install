@@ -1,0 +1,14 @@
+# 1. 핵심 LangChain (보통 빠르게 업데이트됨)
+pip install --only-binary=:all: langchain langchain-core langchain-community langgraph langchain-ollama ollama
+
+# 2. 데이터 처리 (numpy가 문제일 수 있음)
+pip install --only-binary=:all: pandas numpy
+
+# 3. ChromaDB (가장 문제될 가능성 높음)
+pip install --only-binary=:all: chromadb
+
+# 4. Streamlit
+pip install --only-binary=:all: streamlit streamlit-chat
+
+# 5. 유틸리티
+pip install --only-binary=:all: python-dotenv pydantic
