@@ -89,24 +89,41 @@ JSON만 출력하세요."""),
 
     # 확인 메시지 생성
     attempted_steps = state.get("current_step", 0)
+    unresolved_reason = state.get("unresolved_reason", "")
 
-    response_text = "😔 불편을 드려 죄송합니다.\n\n"
+    # 검색 결과가 없는 경우 (FAQ를 찾을 수 없음)
+    if "FAQ를 찾을 수 없음" in unresolved_reason or "관련 FAQ" in unresolved_reason:
+        response_text = (
+            "🔍 죄송합니다.\n\n"
+            "**관련 해결책을 찾을 수 없습니다.**\n\n"
+            "상담원에게 문의글을 남기시면 빠르게 도움드리겠습니다.\n\n"
+            "📋 **등록될 문의 내용:**\n\n"
+            f"**제목**: {title}\n"
+            f"**문의 내용**: {main_issue}\n\n"
+            "💬 **상담원에게 문의글을 남기시겠습니까?**\n\n"
+            "답변해주세요:\n"
+            "- '네' 또는 '등록해주세요' → 문의 등록\n"
+            "- '아니요' 또는 '취소' → 취소"
+        )
+    else:
+        # 해결 단계를 시도했지만 실패한 경우
+        response_text = "😔 불편을 드려 죄송합니다.\n\n"
 
-    if attempted_steps > 0:
-        response_text += f"지금까지 {attempted_steps}단계를 시도하셨지만 문제가 해결되지 않은 것 같습니다.\n"
+        if attempted_steps > 0:
+            response_text += f"지금까지 {attempted_steps}단계를 시도하셨지만 문제가 해결되지 않은 것 같습니다.\n"
 
-    response_text += (
-        "담당 부서의 확인이 필요한 상황입니다.\n\n"
-        "📋 **등록될 문의 내용:**\n\n"
-        f"**제목**: {title}\n"
-        f"**핵심 문제**: {main_issue}\n\n"
-        "**대화 내역** (최근 5개 메시지):\n"
-        f"```\n{conversation_text[-5:]}\n```\n\n"
-        "💬 **이 내용으로 문의를 등록하시겠습니까?**\n\n"
-        "답변해주세요:\n"
-        "- '네' 또는 '등록해주세요' → 문의 등록\n"
-        "- '아니요' 또는 '취소' → 문의 등록 취소"
-    )
+        response_text += (
+            "담당 부서의 확인이 필요한 상황입니다.\n\n"
+            "📋 **등록될 문의 내용:**\n\n"
+            f"**제목**: {title}\n"
+            f"**핵심 문제**: {main_issue}\n\n"
+            "**대화 내역** (최근 5개 메시지):\n"
+            f"```\n{conversation_text[-5:]}\n```\n\n"
+            "💬 **이 내용으로 문의를 등록하시겠습니까?**\n\n"
+            "답변해주세요:\n"
+            "- '네' 또는 '등록해주세요' → 문의 등록\n"
+            "- '아니요' 또는 '취소' → 문의 등록 취소"
+        )
 
     # 응답 메시지 추가
     state["messages"].append(AIMessage(content=response_text))

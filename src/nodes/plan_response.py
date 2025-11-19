@@ -43,17 +43,16 @@ def plan_response_node(state: SupportState) -> Dict[str, Any]:
         temperature=0
     )
 
-    # 검색된 문서가 없는 경우
+    # 검색된 문서가 없는 경우 - 바로 티켓 생성 플로우로
     if not state["retrieved_docs"]:
-        state["solution_steps"] = [{
-            "step": 1,
-            "action": "관련 정보 없음",
-            "description": "죄송합니다. 해당 질문과 관련된 FAQ를 찾을 수 없습니다.",
-            "expected_result": "고객센터에 문의해주세요.",
-            "completed": False
-        }]
+        # solution_steps 비워두기 (티켓 생성에 필요 없음)
+        state["solution_steps"] = []
         state["current_step"] = 0
-        state["status"] = "responding"
+
+        # 바로 에스컬레이션 상태로 설정
+        state["status"] = "escalated"
+        state["unresolved_reason"] = "관련 FAQ를 찾을 수 없음"
+
         return state
 
     # 검색된 문서들 포맷팅
