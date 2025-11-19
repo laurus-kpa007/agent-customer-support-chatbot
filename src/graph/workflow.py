@@ -11,6 +11,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.models.state import SupportState
 from src.nodes import (
@@ -75,8 +76,11 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("create_ticket", "send_notification")
     workflow.add_edge("send_notification", END)
 
-    # 컴파일 (체크포인터 없이 - PoC용)
-    app = workflow.compile()
+    # 체크포인터 추가 (대화 상태 유지 - 메모리 기반)
+    memory = MemorySaver()
+
+    # 컴파일
+    app = workflow.compile(checkpointer=memory)
 
     return app
 
