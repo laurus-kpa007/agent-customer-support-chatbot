@@ -54,8 +54,20 @@ def evaluate_status_node(state: SupportState) -> Dict[str, Any]:
     # 간단한 키워드 기반 판단 (빠른 응답)
     lower_msg = last_user_message.lower()
 
-    # 해결됨
-    if any(keyword in lower_msg for keyword in ["해결", "됐어요", "됐습니다", "감사", "고마워"]):
+    # 부정 표현 먼저 체크 (해결되지 않음)
+    negative_keywords = ["안돼요", "안돼", "안 돼", "안됩니다", "안 됩니다",
+                         "여전히", "그래도", "하지만", "했는데", "했지만",
+                         "안 되", "안되", "실패", "효과없", "소용없"]
+    has_negative = any(keyword in lower_msg for keyword in negative_keywords)
+
+    # 명확한 해결 표현 (부정 표현 없이)
+    resolved_keywords = ["해결됐어요", "해결됐습니다", "해결되었", "됐어요", "됐습니다",
+                         "문제없어요", "잘 돼요", "잘 됩니다", "정상", "괜찮아요",
+                         "감사합니다", "감사해요", "고맙습니다", "고마워요"]
+    has_resolved = any(keyword in lower_msg for keyword in resolved_keywords)
+
+    # 해결됨 판단: 해결 키워드 O + 부정 표현 X
+    if has_resolved and not has_negative:
         state["status"] = "resolved"
         state["messages"].append(
             AIMessage(content="🎉 문제가 해결되어 다행입니다!\n\n추가로 도움이 필요하시면 언제든 문의해주세요. 😊")
@@ -74,23 +86,39 @@ def evaluate_status_node(state: SupportState) -> Dict[str, Any]:
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """당신은 고객지원 대화를 분석하는 전문가입니다.
-사용자의 응답을 분석하여 다음 중 하나를 판단하세요:
+사용자의 응답을 분석하여 문제 해결 여부를 판단하세요.
 
-1. "resolved": 문제가 해결됨
-2. "continue": 현재 단계가 효과 없음, 다음 단계 필요
-3. "escalate": 사용자가 명시적으로 문의 등록 요청
+**중요: 단계를 수행했다는 것과 문제가 해결됐다는 것을 구분하세요!**
 
 판단 기준:
-- "해결됐어요", "됐어요", "감사합니다" 등 → resolved
-- "안돼요", "여전히", "체크되어 있는데", "안 됩니다" 등 → continue
-- "등록해주세요", "문의할게요", "상담원" 등 → escalate
 
-JSON 형식으로 응답:
-{{"decision": "resolved|continue|escalate", "reason": "판단 이유"}}
+1. "resolved" (문제 해결됨):
+   - "해결됐어요", "문제 없어요", "잘 돼요", "정상이에요"
+   - "됐어요", "됐습니다" (단독으로 긍정 의미)
+   - "감사합니다", "고마워요"
+   - **주의**: "했어요", "했습니다"는 단계 수행이지 해결이 아님!
 
-JSON만 출력하세요."""),
+2. "continue" (다음 단계 필요):
+   - "안돼요", "안 됩니다", "안 되네요", "실패했어요"
+   - "여전히", "그래도", "계속"
+   - "했는데", "했지만", "했어요" (단계 수행했지만 미해결)
+   - "체크했어요", "삭제했어요", "확인했어요" (수행만 함)
+
+3. "escalate" (문의 등록 요청):
+   - "등록해주세요", "상담원", "문의하겠습니다"
+
+**예시:**
+- "삭제도 했어" → continue (삭제는 했지만 해결 여부 불명)
+- "캐시 삭제했는데 안돼요" → continue (부정 표현)
+- "해결됐어요!" → resolved (명확한 해결 표현)
+- "잘 되네요" → resolved (긍정 표현)
+
+JSON 형식으로만 응답:
+{{"decision": "resolved|continue|escalate", "reason": "판단 이유"}}"""),
         ("user", """현재 단계: {current_step}
-사용자 응답: {user_response}""")
+사용자 응답: {user_response}
+
+위 응답을 분석하여 JSON으로 판단 결과를 출력하세요.""")
     ])
 
     try:
