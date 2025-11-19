@@ -73,8 +73,6 @@ def evaluate_status_node(state: SupportState) -> Dict[str, Any]:
 
     # 해결됨 판단: 해결 키워드 O + 부정 표현 X
     if has_resolved and not has_negative:
-    # 해결됨
-    if any(keyword in lower_msg for keyword in ["해결", "됐어요", "됐습니다", "감사", "고마워"]):
         # print("[Evaluate] → 해결됨 (resolved)")  # 디버그
         state["status"] = "resolved"
         state["messages"].append(
