@@ -47,26 +47,35 @@ def search_knowledge_node(state: SupportState) -> Dict[str, Any]:
         collection_name="faq_collection"
     )
 
-    # 유사 문서 검색 (상위 3개)
+    # 유사 문서 검색 (상위 5개 - 필터링 전)
     query = state["current_query"]
     docs_with_scores = vectorstore.similarity_search_with_score(
         query,
-        k=3
+        k=5
     )
 
-    # 검색 결과 저장
+    # 유사도 임계값 필터링 (코사인 거리 기준)
+    # 0.0 = 완전 동일, 0.7 이하 = 관련성 있음
+    relevance_threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.7"))
+
+    # 검색 결과 저장 (임계값 이하만)
     retrieved_docs = []
     for doc, score in docs_with_scores:
-        retrieved_docs.append({
-            "id": doc.metadata.get("id", ""),
-            "category": doc.metadata.get("category", ""),
-            "title": doc.metadata.get("title", ""),
-            "content": doc.page_content,
-            "tags": doc.metadata.get("tags", []),
-            "score": float(score),
-            "source": doc.metadata.get("source", "faq"),
-            "helpful_count": doc.metadata.get("helpful_count", 0)
-        })
+        # 임계값보다 유사도가 높은 것만 포함
+        if score <= relevance_threshold:
+            retrieved_docs.append({
+                "id": doc.metadata.get("id", ""),
+                "category": doc.metadata.get("category", ""),
+                "title": doc.metadata.get("title", ""),
+                "content": doc.page_content,
+                "tags": doc.metadata.get("tags", []),
+                "score": float(score),
+                "source": doc.metadata.get("source", "faq"),
+                "helpful_count": doc.metadata.get("helpful_count", 0)
+            })
+
+    # 최대 3개까지만 사용
+    retrieved_docs = retrieved_docs[:3]
 
     state["retrieved_docs"] = retrieved_docs
 
