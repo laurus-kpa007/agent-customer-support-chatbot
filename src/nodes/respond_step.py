@@ -30,6 +30,10 @@ def respond_step_node(state: SupportState) -> Dict[str, Any]:
     current_idx = state["current_step"]
     steps = state["solution_steps"]
 
+    # 첫 응답시 검색 결과 정보 포함
+    # 조건: 현재 단계가 0이고, retrieved_docs가 있으면 (새 검색 직후)
+    is_first_response = current_idx == 0 and state.get("retrieved_docs") and len(state.get("retrieved_docs", [])) > 0
+
     # 현재 단계가 없으면 에스컬레이션
     if current_idx >= len(steps):
         state["status"] = "escalated"
@@ -47,7 +51,15 @@ def respond_step_node(state: SupportState) -> Dict[str, Any]:
         step_num = current_step["step"]
         total_steps = len(steps)
 
+        # 첫 응답시 검색 정보 추가
+        search_info = ""
+        if is_first_response and state.get("retrieved_docs"):
+            docs = state["retrieved_docs"]
+            search_info = f"🔍 **검색 결과**: {len(docs)}개의 관련 FAQ를 찾았습니다.\n"
+            search_info += f"가장 관련성 높은 문서: **{docs[0]['title']}** (카테고리: {docs[0]['category']})\n\n"
+
         response_text = (
+            f"{search_info}"
             f"**[단계 {step_num}/{total_steps}]** {current_step['action']}\n\n"
             f"📝 {current_step['description']}\n\n"
             f"✅ **기대 결과**: {current_step['expected_result']}\n\n"

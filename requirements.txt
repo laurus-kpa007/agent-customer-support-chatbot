@@ -10,7 +10,7 @@ ollama==0.3.3
 
 # 벡터 스토어
 chromadb==0.5.20
-langchain-chroma==0.1.4
+langchain-chroma==1.0.0
 
 # Streamlit WebUI
 streamlit==1.40.1

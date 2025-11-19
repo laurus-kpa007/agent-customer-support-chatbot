@@ -47,26 +47,38 @@ Agent: 아래 내용으로 문의를 등록하였습니다.
 ```
 사용자 입력
   → 초기화
-  → RAG 검색 (벡터 스토어)
-  → 답변 계획 (LLM)
-  → 단계별 응답
-  → [Human-in-the-Loop] 사용자 응답 대기
-  → 상태 평가 (LLM)
+  → 의도 분류 (LLM) ← NEW
   → 분기:
-     ├─ 해결됨 → 종료
-     ├─ 다음 단계 → 응답 반복
-     └─ 에스컬레이션 → 티켓 생성 → 알림 → 종료
+     ├─ 스몰톡 → 인사 응답 → 종료
+     ├─ 기술 지원 → RAG 검색 (벡터 스토어)
+     │              → 답변 계획 (LLM)
+     │              → 단계별 응답
+     │              → [Human-in-the-Loop] 사용자 응답 대기
+     │              → 상태 평가 (LLM)
+     │              → 분기:
+     │                 ├─ 해결됨 → 종료
+     │                 ├─ 다음 단계 → 응답 반복
+     │                 └─ 에스컬레이션 → 티켓 확인 ← NEW
+     │                                   → 사용자 확인 대기
+     │                                   → 확인 평가 (LLM) ← NEW
+     │                                   → 티켓 생성 → 알림 → 종료
+     └─ 대화 계속 → 상태 평가로 복귀
 ```
 
-### 7개 핵심 노드
+### 12개 핵심 노드
 
 1. **Initialize**: 세션 초기화, 상태 설정
-2. **Search Knowledge**: Chroma 벡터 검색 (BGE-M3-Korean 임베딩)
-3. **Plan Response**: LLM 기반 단계별 해결방법 생성
-4. **Respond Step**: 현재 단계 안내
-5. **Evaluate Status**: 해결 여부 판단 및 라우팅
-6. **Create Ticket**: 대화 요약 및 티켓 생성
-7. **Send Notification**: 이메일/푸시 알림 발송
+2. **Classify Intent** ⭐ NEW: LLM 기반 의도 분류 (스몰톡/기술지원/대화계속)
+3. **Handle Small Talk** ⭐ NEW: 인사 및 간단한 응답 처리
+4. **Search Knowledge**: Chroma 벡터 검색 (BGE-M3-Korean 임베딩)
+5. **Plan Response**: LLM 기반 단계별 해결방법 생성
+6. **Respond Step**: 현재 단계 안내
+7. **Evaluate Status**: 해결 여부 판단 및 라우팅
+8. **Confirm Ticket** ⭐ NEW: 티켓 생성 전 사용자 확인 요청 (LLM 요약)
+9. **Evaluate Ticket Confirmation** ⭐ NEW: 사용자 확인 응답 평가 (yes/no/unclear)
+10. **Create Ticket**: 대화 요약 및 티켓 생성 (전체 대화 이력 포함)
+11. **Send Notification**: 이메일/푸시 알림 발송
+12. **State Reset** ⭐ NEW: 해결/티켓 생성 후 상태 초기화
 
 ## 🛠️ 기술 스택
 
@@ -292,5 +304,6 @@ MIT License
 
 ---
 
-**현재 상태**: 설계 완료, 구현 준비 중
-**최종 업데이트**: 2025-11-18
+**현재 상태**: ✅ 구현 완료, 테스트 검증됨
+**최종 업데이트**: 2025-11-19
+**주요 개선**: LLM 기반 의도 분류, 티켓 확인 플로우, 상태 초기화 추가
