@@ -54,6 +54,7 @@ class SupportState(TypedDict):
     unresolved_reason: Optional[str]         # 미해결 사유
     ticket_id: Optional[str]                 # 생성된 티켓 ID
     ticket_confirmed: Optional[bool]         # 티켓 생성 확인 (True: 생성, False: 취소, None: 미정)
+    ticket_additional_info: Optional[str]    # 티켓 추가 정보 (사용자 입력)
 
     # 의도 분류
     intent: Optional[Literal["small_talk", "technical_support", "continue_conversation"]]  # 사용자 의도

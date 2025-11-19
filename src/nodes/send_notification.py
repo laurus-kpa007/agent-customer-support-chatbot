@@ -61,10 +61,13 @@ def send_notification_node(state: SupportState) -> Dict[str, Any]:
     #     body=email_content
     # )
 
-    # 푸시 알림 시뮬레이션
     print("📱 푸시 알림 발송 시뮬레이션")
     print(f"   사용자: {user_id}")
     print(f"   메시지: 문의가 등록되었습니다 (#{ticket_id})")
     print()
+
+    # 대화 상태 초기화
+    from src.utils.state_reset import reset_conversation_state
+    state = reset_conversation_state(state)
 
     return state

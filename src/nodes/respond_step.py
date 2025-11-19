@@ -9,7 +9,10 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from typing import Dict, Any
+import os
 from langchain_core.messages import AIMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
 
 from src.models.state import SupportState
 
@@ -58,15 +61,52 @@ def respond_step_node(state: SupportState) -> Dict[str, Any]:
             search_info = f"🔍 **검색 결과**: {len(docs)}개의 관련 FAQ를 찾았습니다.\n"
             search_info += f"가장 관련성 높은 문서: **{docs[0]['title']}** (카테고리: {docs[0]['category']})\n\n"
 
-        response_text = (
-            f"{search_info}"
-            f"**[단계 {step_num}/{total_steps}]** {current_step['action']}\n\n"
-            f"📝 {current_step['description']}\n\n"
-            f"✅ **기대 결과**: {current_step['expected_result']}\n\n"
-            f"---\n"
-            f"이 단계를 확인하셨나요? 결과를 알려주세요.\n"
-            f"(예: '해결됐어요', '안돼요', '다음 단계', '등록해주세요')"
+        # LLM 초기화
+        llm_model = os.getenv("OLLAMA_LLM_MODEL", "gemma2:27b")
+        llm = ChatOllama(
+            model=llm_model,
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            temperature=0.3  # 명확한 지시를 위해 낮은 온도
         )
+
+        # 단계별 응답 프롬프트
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """당신은 친절하고 꼼꼼한 기술 지원 AI 상담원입니다.
+            
+            사용자에게 문제 해결을 위한 다음 단계를 안내하세요.
+            
+            현재 단계 정보:
+            - 단계 번호: {step_num}/{total_steps}
+            - 조치: {action}
+            - 설명: {description}
+            - 기대 결과: {expected_result}
+            
+            지침:
+            1. 사용자에게 이 단계를 수행하도록 정중하게 요청하세요.
+            2. 설명 부분을 이해하기 쉽게 풀어서 이야기하세요.
+            3. 기대 결과를 언급하며 무엇을 확인해야 하는지 알려주세요.
+            4. 이 단계를 시도한 후 결과를 알려달라고(해결되었는지, 안되었는지) 명확히 요청하세요.
+            5. 이전 검색 결과가 있다면(search_info) 참고하여 언급하세요.
+            
+            어조:
+            - 격려하고 지지하는 태도
+            - 명확하고 이해하기 쉽게
+            - "다음과 같이 해보시겠어요?", "확인 부탁드립니다" 등의 정중한 표현 사용
+            """),
+            ("user", f"검색 정보: {{search_info}}\n\n현재 단계 내용을 바탕으로 사용자에게 안내 메시지를 작성해주세요.")
+        ])
+
+        # LLM 호출
+        chain = prompt | llm
+        response = chain.invoke({
+            "step_num": step_num,
+            "total_steps": total_steps,
+            "action": current_step['action'],
+            "description": current_step['description'],
+            "expected_result": current_step['expected_result'],
+            "search_info": search_info
+        })
+        response_text = response.content
 
     # 응답 메시지 추가
     state["messages"].append(AIMessage(content=response_text))
